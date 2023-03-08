@@ -85,27 +85,6 @@ class BPFRecord(IterableBuff):
             parsed[key] = item
             pos = pos + 1
         return parsed
-'''
-struct bpf_map_info {
-	__u32 type;
-	__u32 id;
-	__u32 key_size;
-	__u32 value_size;
-	__u32 max_entries;
-	__u32 map_flags;
-	char  name[BPF_OBJ_NAME_LEN];
-	__u32 ifindex;
-	__u32 btf_vmlinux_value_type_id;
-	__u64 netns_dev;
-	__u64 netns_ino;
-	__u32 btf_id;
-	__u32 btf_key_type_id;
-	__u32 btf_value_type_id;
-	__u32 :32;	/* alignment pad */
-	__u64 map_extra;
-}
-'''
-
 
 class BPFMap():
     '''Class representing a BPF Map'''
