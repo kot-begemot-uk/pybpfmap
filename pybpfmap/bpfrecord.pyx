@@ -57,7 +57,7 @@ class IterableBuff():
         ret = self.buff[self.loc]
         self.loc = self.loc + 1
         return ret
-        
+
     def __getitem__(self, item):
         '''Get an individual item'''
         if self.buff is None:
@@ -69,7 +69,7 @@ class IterableBuff():
 
 class BPFRecord(IterableBuff):
     '''Class representing a single bpf map record,
-    args: 
+    args:
         json template - list of tuples (field name, format) where
         format is a python struct format specifier. For example
         Q is 64 bit long. For more information consult struct documentation
@@ -89,7 +89,10 @@ class BPFRecord(IterableBuff):
         super().__init__(buff, struct.calcsize(self.template))
 
     def unpack(self, buff=None):
-        '''Parse the buffer'''
+        '''Parse the buffer. Buffer is bytes or something that
+        behaves like bytes, f.e. cython char*
+        returns a dict object built according to the template
+        '''
 
         if buff is None:
             if self.buffer is not None:
@@ -107,7 +110,9 @@ class BPFRecord(IterableBuff):
         return parsed
 
     def pack(self, arg):
-        '''Parse the buffer'''
+        '''Build a buffer from a dict according to the
+        template. The buffer is a bytes() object.
+        '''
 
         if arg is None:
             raise ValueError
@@ -120,7 +125,10 @@ class BPFRecord(IterableBuff):
         return self.compiled.pack(*to_pack)
 
 class BPFMap():
-    '''Class representing a BPF Map'''
+    '''Class representing a BPF Map. Takes one argument - pinned
+    pathname. Key and value sizes are obtained from the kernel
+    using the object info call.
+    '''
     def __init__(self, pathname):
         cdef bpf_map_info *info = <bpf_map_info *>malloc(sizeof(bpf_map_info))
         cdef unsigned int size = sizeof(bpf_map_info)
@@ -146,14 +154,24 @@ class BPFMap():
 
 
     def update_elem(self, key, value):
-        '''Update an element supplied as a Python object'''
+        '''Update an element supplied as a Python object.
+        key and value should be bytes() objects or cython
+        char* pointers.
+        '''
+
+        # cython performs an autoconversion from bytes() to char*
+
         cdef char *ckey = key
         cdef char *cvalue = value
-
+        
         return not bpf_map_update_elem(self.fd, ckey, cvalue, 0)
 
     def lookup_elem(self, key):
-        '''Lookup an element for key'''
+        '''Lookup an element for key. Key must be a bytes() object
+        or a cython char* pointer. Returns a bytes() object if found.
+        '''
+
+        # cython performs an autoconversion from bytes() to char*
 
         cdef char *ckey = key
         cdef char *cvalue = <char*>malloc(self.valuesize)
@@ -161,6 +179,9 @@ class BPFMap():
         ret = bpf_map_lookup_elem(self.fd, ckey, cvalue)
 
         if ret == 0:
+            # note - we build a new bytes() out of the result
+            # this way we can free our buffer which is malloc'ed
+            # and not from the python memory pool. 
             result = bytes(cvalue)
         else:
             result = None
@@ -168,17 +189,24 @@ class BPFMap():
         free(cvalue)
 
         return result
-        
-    def lookup_and_delete(self, key, value):
-        '''Lookup and delete an element supplied as a Python object'''
 
-        cdef char *ckey = key 
+    def lookup_and_delete(self, key):
+        '''Lookup and delete an element by key. Key is a bytes() object.
+        Returns a bytes() object if found, otherwise returns None
+        '''
+
+        # cython performs an autoconversion from bytes() to char*
+
+        cdef char *ckey = key
         cdef char *cvalue = <char*>malloc(self.valuesize)
 
         if cvalue is None:
             raise MemoryError
 
         if not bpf_map_lookup_and_delete_elem(self.fd, ckey, cvalue):
+            # note - we build a new bytes() out of the result
+            # this way we can free our buffer which is malloc'ed
+            # and not from the python memory pool. 
             result = bytes(cvalue)
         else:
             result = None
@@ -186,15 +214,15 @@ class BPFMap():
         free(cvalue)
 
         return result
-       
+
     def delete(self, key):
-        '''Delete an element supplied as a Python object'''
+        '''Delete an element based on key supplied as a bytes() object'''
 
         cdef char *ckey = key
         return not bpf_map_delete_elem(self.fd, ckey)
 
-    def get_next_key(self, key, nextkey):
-        '''Get Next Key'''
+    def get_next_key(self, key):
+        '''Get next key from key based on key supplied as a bytes() object'''
 
         cdef char *ckey = key
         cdef char *cnextkey = <char*>malloc(self.keysize)
@@ -204,6 +232,9 @@ class BPFMap():
 
 
         if not bpf_map_get_next_key(self.fd, ckey, cnextkey):
+            # note - we build a new bytes() out of the result
+            # this way we can free our buffer which is malloc'ed
+            # and not from the python memory pool. 
             result = bytes(cnextkey)
         else:
             result = None
