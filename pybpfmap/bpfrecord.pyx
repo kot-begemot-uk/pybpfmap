@@ -60,24 +60,26 @@ class IterableBuff():
 
 class BPFRecord(IterableBuff):
     '''Class representing a single bpf map record'''
-    def __init__(self, json_template):
+    def __init__(self, json_template, buff=None):
 
-        self.buffer : cython.p_char
         self.template = "="
         self.parsed = {}
         self.json_template = json_template
         for key, template in json_template:
             self.template = self.template + template
 
-        super().__init__(self.buffer, struct.calcsize(self.template))
+        super().__init__(buff, struct.calcsize(self.template))
 
-    def parse(self):
+    def parse(self, buff=None):
         '''Parse the buffer'''
-        if self.buffer is None:
-            raise ValueError
 
-        buff = bytes(self)
-        data = struct.unpack(self.template, bytes(self))
+        if buff is None:
+            if self.buffer is not None:
+                data = struct.unpack(self.template, self.buff)
+            else:
+                raise ValueError
+        else:
+            data = struct.unpack(self.template, buff)
         pos = 0
         parsed = {}
         for item in data:
