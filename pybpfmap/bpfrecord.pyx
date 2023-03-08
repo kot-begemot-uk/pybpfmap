@@ -3,7 +3,6 @@
 import struct
 import sys
 import cython
-from cython.cimports import bpfapi
 
 from libc.stdlib cimport malloc, free
 
@@ -107,25 +106,23 @@ struct bpf_map_info {
 }
 '''
 
-MAP_INFO_TEMPLATE = "=IIIIII16sIIQQIIIIQ"
-MAP_INFO_SIZE = struct.calcsize(MAP_INFO_TEMPLATE)
 
 class BPFMap():
     '''Class representing a BPF Map'''
     def __init__(self, pathname):
-        cdef bpfapi.bpf_map_info *info = <bpfapi.bpf_map_info *>malloc(sizeof(bpfapi.bpf_map_info))
-        cdef unsigned int size = MAP_INFO_SIZE
+        cdef bpf_map_info *info = <bpf_map_info *>malloc(sizeof(bpf_map_info))
+        cdef unsigned int size = sizeof(bpf_map_info)
 
         try:
             self.pathname = pathname
 
-            self.fd = bpfapi.bpf_obj_get(pathname)
+            self.fd = bpf_obj_get(pathname)
 
             if self.fd < 0:
                 raise ValueError
 
 
-            if bpfapi.bpf_obj_get_info_by_fd(self.fd, info, &size):
+            if bpf_obj_get_info_by_fd(self.fd, info, &size):
                 raise ValueError
             else:
                 self.keysize = info.key_size
@@ -141,7 +138,7 @@ class BPFMap():
         cdef char *ckey = key
         cdef char *cvalue = value
 
-        return not bpfapi.bpf_map_update_elem(self.fd, ckey, cvalue, 0)
+        return not bpf_map_update_elem(self.fd, ckey, cvalue, 0)
 
     def lookup_elem(self, key):
         '''Lookup an element for key'''
@@ -149,7 +146,7 @@ class BPFMap():
         cdef char *ckey = key
         cdef char *cvalue = <char*>malloc(self.valuesize)
 
-        ret = bpfapi.bpf_map_lookup_elem(self.fd, ckey, cvalue)
+        ret = bpf_map_lookup_elem(self.fd, ckey, cvalue)
 
         if ret == 0:
             result = bytes(cvalue)
@@ -169,7 +166,7 @@ class BPFMap():
         if cvalue is None:
             raise MemoryError
 
-        if not bpfapi.bpf_map_lookup_and_delete_elem(self.fd, ckey, cvalue):
+        if not bpf_map_lookup_and_delete_elem(self.fd, ckey, cvalue):
             result = bytes(cvalue)
         else:
             result = None
@@ -182,7 +179,7 @@ class BPFMap():
         '''Delete an element supplied as a Python object'''
 
         cdef char *ckey = key
-        return not bpfapi.bpf_map_delete_elem(self.fd, ckey)
+        return not bpf_map_delete_elem(self.fd, ckey)
 
     def get_next_key(self, key, nextkey):
         '''Get Next Key'''
@@ -194,7 +191,7 @@ class BPFMap():
             raise MemoryError
 
 
-        if not bpfapi.bpf_map_get_next_key(self.fd, ckey, cnextkey):
+        if not bpf_map_get_next_key(self.fd, ckey, cnextkey):
             result = bytes(cnextkey)
         else:
             result = None
