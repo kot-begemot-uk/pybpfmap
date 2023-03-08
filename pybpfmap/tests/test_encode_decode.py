@@ -27,3 +27,10 @@ def test_unpack():
     result = p.unpack(bytes([17, 46]))
     assert_equal(result["field1"], 17)
     assert_equal(result["field2"], 46)
+
+def test_pack():
+
+    p = BPFRecord([("field1", "B"), ("field2", "B")])
+    result = p.pack({"field1":17, "field2":46})
+    assert_equal(result[0], 17)
+    assert_equal(result[1], 46)

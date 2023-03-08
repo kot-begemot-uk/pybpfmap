@@ -105,7 +105,7 @@ class BPFRecord(IterableBuff):
 
         to_pack = []
 
-        for specs in self.json_format:
+        for specs in self.json_template:
             to_pack.append(arg[specs[0]])
 
         return self.compiled.pack(*to_pack)
