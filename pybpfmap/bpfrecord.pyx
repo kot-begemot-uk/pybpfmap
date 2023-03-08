@@ -59,27 +59,36 @@ class IterableBuff():
 
 
 class BPFRecord(IterableBuff):
-    '''Class representing a single bpf map record'''
-    def __init__(self, json_template, buff=None):
+    '''Class representing a single bpf map record,
+    args: 
+        json template - list of tuples (field name, format) where
+        format is a python struct format specifier. For example
+        Q is 64 bit long. For more information consult struct documentation
+        order is parsing order "=" - machine endian, "<" - little endian
+        ">" - big endian, "!" - network byte order.
+    '''
+    def __init__(self, json_template, buff=None, order="="):
 
-        self.template = "="
+        self.template = order
         self.parsed = {}
         self.json_template = json_template
         for key, template in json_template:
             self.template = self.template + template
 
+        self.compiled = struct.Struct(self.template)
+
         super().__init__(buff, struct.calcsize(self.template))
 
-    def parse(self, buff=None):
+    def unpack(self, buff=None):
         '''Parse the buffer'''
 
         if buff is None:
             if self.buffer is not None:
-                data = struct.unpack(self.template, self.buff)
+                data = self.compiled.unpack(self.buff)
             else:
                 raise ValueError
         else:
-            data = struct.unpack(self.template, buff)
+            data = self.compiled.unpack(buff)
         pos = 0
         parsed = {}
         for item in data:
@@ -87,6 +96,19 @@ class BPFRecord(IterableBuff):
             parsed[key] = item
             pos = pos + 1
         return parsed
+
+    def pack(self, arg):
+        '''Parse the buffer'''
+
+        if arg is None:
+            raise ValueError
+
+        to_pack = []
+
+        for specs in self.json_format:
+            to_pack.append(arg[specs[0]])
+
+        return self.compiled.pack(*to_pack)
 
 class BPFMap():
     '''Class representing a BPF Map'''

@@ -24,6 +24,6 @@ def test_create():
 def test_unpack():
 
     p = BPFRecord([("field1", "B"), ("field2", "B")])
-    result = p.parse(bytes([17, 46]))
+    result = p.unpack(bytes([17, 46]))
     assert_equal(result["field1"], 17)
     assert_equal(result["field2"], 46)
