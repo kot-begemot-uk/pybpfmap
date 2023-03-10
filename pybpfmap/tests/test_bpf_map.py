@@ -22,20 +22,38 @@ from nose.tools import assert_equal
 from nose.tools import assert_is_none
 from os import unlink
 
+TESTSEQ = "0102030405060708090a0b0c0d0e0f00"
+TESTKEY = bytes.fromhex(TESTSEQ)
+TESTDATA = bytes.fromhex(TESTSEQ + TESTSEQ + TESTSEQ + TESTSEQ)
+
+
 def test_create():
-    '''Create a record parser'''
+    '''Create a map'''
 
     m = BPFMap(1, BPF_MAP_TYPE_HASH, "test_create".encode("ascii"), 16, 64, 256, create=True)
 
 def test_pin():
-    '''Create a record parser'''
+    '''Pin a map'''
 
     m = BPFMap(1, BPF_MAP_TYPE_HASH, "test_pin".encode("ascii"), 16, 64, 256, create=True)
     try:
         unlink("/sys/fs/bpf/test_pin")
     except OSError:
         pass
-    assert_equal(m.pin_map("/sys/fs/bpf/test_pin".encode("ascii")), True)
+    assert_(m.pin_map("/sys/fs/bpf/test_pin".encode("ascii")))
     unlink("/sys/fs/bpf/test_pin")
     
+   
+def test_elements():
+    '''Create a record parser'''
+
+    m = BPFMap(1, BPF_MAP_TYPE_HASH, "test_elem".encode("ascii"), 16, 64, 256, create=True)
+    assert_(m.update_elem(TESTKEY, TESTDATA))
+    print(TESTDATA.hex())
+    l = m.lookup_elem(TESTKEY)
+    print(l.hex())
+    assert_equal(m.lookup_elem(TESTKEY),TESTDATA)
+    
+    
+
 

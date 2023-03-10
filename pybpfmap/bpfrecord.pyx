@@ -11,6 +11,7 @@
 
 import struct
 import sys
+import os
 import cython
 
 from libc.stdlib cimport malloc, free
@@ -164,7 +165,7 @@ class BPFMap():
         cdef char *ckey = key
         cdef char *cvalue = value
         
-        return not bpf_map_update_elem(self.fd, ckey, cvalue, 0)
+        return not bpf_map_update_elem(self.fd, <void *>ckey, <void *>cvalue, 0)
 
     def lookup_elem(self, key):
         '''Lookup an element for key. Key must be a bytes() object
@@ -176,13 +177,15 @@ class BPFMap():
         cdef char *ckey = key
         cdef char *cvalue = <char*>malloc(self.valuesize)
 
-        ret = bpf_map_lookup_elem(self.fd, ckey, cvalue)
+        ret = bpf_map_lookup_elem(self.fd, <void*>ckey, <void*>cvalue)
 
         if ret == 0:
             # note - we build a new bytes() out of the result
             # this way we can free our buffer which is malloc'ed
             # and not from the python memory pool. 
-            result = bytes(cvalue)
+            # This rather ugly and perl-like incantation prevents
+            # cython from treating the result as a char
+            result = bytes(<bytes>cvalue[:self.valuesize])
         else:
             result = None
 
@@ -203,11 +206,13 @@ class BPFMap():
         if cvalue is None:
             raise MemoryError
 
-        if not bpf_map_lookup_and_delete_elem(self.fd, ckey, cvalue):
+        if not bpf_map_lookup_and_delete_elem(self.fd, <void *>ckey, <void *>cvalue):
             # note - we build a new bytes() out of the result
             # this way we can free our buffer which is malloc'ed
             # and not from the python memory pool. 
-            result = bytes(cvalue)
+            # This rather ugly and perl-like incantation prevents
+            # cython from treating the result as a char
+            result = bytes(<bytes>cvalue[:self.valuesize])
         else:
             result = None
 
@@ -231,17 +236,24 @@ class BPFMap():
             raise MemoryError
 
 
-        if not bpf_map_get_next_key(self.fd, ckey, cnextkey):
+        if not bpf_map_get_next_key(self.fd, <void *>ckey, <void *>cnextkey):
             # note - we build a new bytes() out of the result
             # this way we can free our buffer which is malloc'ed
             # and not from the python memory pool. 
-            result = bytes(cnextkey)
+            # This rather ugly and perl-like incantation prevents
+            # cython from treating the result as a char
+            result = bytes(<bytes>cnextkey[:self.keysize])
         else:
             result = None
 
         free(cnextkey)
 
         return result
+
+    def __del__(self):
+        '''Cleanup and delete the map'''
+        if self.fd > 0:
+            os.close(self.fd)
 
 class PinnedBPFMap():
     '''Class representing a Pinned BPF Map. Takes one argument - pinned
