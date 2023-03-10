@@ -14,6 +14,7 @@ import sys
 import cython
 
 from libc.stdlib cimport malloc, free
+from libc.string cimport memset
 
 def buff_copy(dest, src, length):
     '''Copy buffer, works for anything - bytes(), bytearray(), str() and does not get confused
@@ -125,32 +126,31 @@ class BPFRecord(IterableBuff):
         return self.compiled.pack(*to_pack)
 
 class BPFMap():
-    '''Class representing a BPF Map. Takes one argument - pinned
-    pathname. Key and value sizes are obtained from the kernel
-    using the object info call.
+    '''Class representing a BPF Map. 
+    init takes as arguments fd, maptype, name, keysize, value, max_entries.
+    If create is False, map will use the fd passed at init time. If it is
+    True, the map will be created
     '''
-    def __init__(self, pathname):
-        cdef bpf_map_info *info = <bpf_map_info *>malloc(sizeof(bpf_map_info))
-        cdef unsigned int size = sizeof(bpf_map_info)
+    def __init__(self, fd, map_type, name, key_size, value_size, max_entries, create=False):
 
-        try:
-            self.pathname = pathname
+        cdef bpf_map_create_opts opts
 
-            self.fd = bpf_obj_get(pathname)
+        self.fd = fd
+        self.keysize = key_size
+        self.valuesize = value_size
+        self.map_type = map_type
 
-            if self.fd < 0:
-                raise ValueError
+        if create:
+            memset(&opts, 0, sizeof(bpf_map_create_opts))
+            opts.sz = sizeof(bpf_map_create_opts)
+            self.fd = bpf_map_create(map_type, name, key_size, value_size, max_entries, &opts)
 
+        if self.fd < 0:
+            raise ValueError
 
-            if bpf_obj_get_info_by_fd(self.fd, info, &size):
-                raise ValueError
-            else:
-                self.keysize = info.key_size
-                self.valuesize = info.value_size
-
-        finally:
-            free(info)
-
+    def pin_map(self, pathname):
+        '''Pin BPF map to pathname specified in the argument'''
+        return not bpf_obj_pin(self.fd, pathname)
 
 
     def update_elem(self, key, value):
@@ -242,3 +242,28 @@ class BPFMap():
         free(cnextkey)
 
         return result
+
+class PinnedBPFMap():
+    '''Class representing a Pinned BPF Map. Takes one argument - pinned
+    pathname. Key and value sizes are obtained from the kernel
+    using the object info call.
+    '''
+    def __init__(self, pathname):
+        cdef bpf_map_info *info = <bpf_map_info *>malloc(sizeof(bpf_map_info))
+        cdef unsigned int size = sizeof(bpf_map_info)
+
+        try:
+            self.pathname = pathname
+
+            fd = bpf_obj_get(pathname)
+
+            if fd < 0:
+                raise ValueError
+
+            if bpf_obj_get_info_by_fd(fd, info, &size):
+                raise ValueError
+            else:
+                super().__init__(fd, info.type, info.name, info.key_size, info.value_size, info.max_entries, create=False)
+
+        finally:
+            free(info)

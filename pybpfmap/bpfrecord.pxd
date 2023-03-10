@@ -13,9 +13,13 @@ cdef extern from "linux/types.h":
     pass
 
 cdef extern from "linux/bpf.h":
+
     struct bpf_map_info:
+        unsigned int type
         unsigned int key_size
         unsigned int value_size
+        unsigned int max_entries
+        char name[16]
 
 cdef extern from "bpf/libbpf_common.h":
     pass
@@ -24,6 +28,13 @@ cdef extern from "bpf/libbpf_legacy.h":
     pass
 
 cdef extern from "bpf/bpf.h":
+
+    struct bpf_map_create_opts:
+        size_t sz
+
+    enum bpf_map_type:
+        pass
+
 
     bint bpf_map_update_elem(int fd, const void *key, const void *value, unsigned long int flags)
     bint bpf_map_lookup_elem(int fd, const void *key, void *value)
@@ -36,3 +47,9 @@ cdef extern from "bpf/bpf.h":
     int bpf_obj_get(const char *pathname)
 
     bint bpf_obj_get_info_by_fd(int bpf_fd, void *info, unsigned int *info_len)
+
+    int bpf_map_create(bpf_map_type map_type, const char *map_name, \
+                        unsigned int key_size, unsigned int value_size, \
+                        unsigned int max_entries, const bpf_map_create_opts *opts)
+
+    bint bpf_obj_pin(int fd, const char *pathname);
