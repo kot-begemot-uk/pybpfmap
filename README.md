@@ -15,16 +15,22 @@ python3 setup.py build_ext -i
 
 import bpfrecord
 
-b = bpfrecord.BPFMap(bytes("/sys/fs/bpf/test-map".encode("ascii"))
+b = bpfrecord.PinnedBPFMap(bytes("/sys/fs/bpf/test-map".encode("ascii"))
 
-value = b.lookup_elem(key)
+KEY = bytes.fromhex("0102030405060708090a0b0c0d0e0f00")
+
+value = b.lookup_elem(KEY)
 ```
 
 All arguments are expected to be bytes() or strings in ascii encoding, all results are bytes or boolean (whatever is applicable).
+Using strings in UTF encoding as arguments is likely to result in an exception.
+
+For more details on how to use it run pydoic bpfrecord and/or see the example code in the test cases.
+ 
 
 ## To use the BPFRecord parser 
 
-Parser is initialised using a list of field:format specifiers. It is possible to specify an optional byte order
+The parser is initialised using a list of field:format specifiers. It is possible to specify an optional byte order
 
 Example
 
