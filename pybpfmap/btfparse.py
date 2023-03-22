@@ -83,9 +83,18 @@ BTFE64_TEMPLATE = "=III"
 BTFE64 = Struct(BTFE64_TEMPLATE)
 BTFE64_SIZE = calcsize(BTFE64_TEMPLATE)
 
+# We need to disable this because of using a class per
+# BTF type. While this results in rather ugly python,
+# it may prove useful later when we add parsing, templates,
+# etc.
+
+# pylint: disable=too-few-public-methods
+# pylint: disable=too-many-arguments
+# pylint: disable=unused-variable
 
 class BTFBase():
     '''Class representing a single BTF Record'''
+    # pylint: disable=too-many-instance-attributes
     def __init__(self, kind=None, vlen=0, kind_flag=False,
                  size_or_type=0, name=None, name_off=0, btf=None):
 
@@ -93,8 +102,8 @@ class BTFBase():
         self.bufsize = BTFSIZE
         self.btf = btf
         self.has_size = False
-        self.name = None 
-        if not self.tid in NO_VALID_NAME:
+        self.name = None
+        if not kind in NO_VALID_NAME:
             if name is not None:
                 self.name = name
             else:
@@ -102,8 +111,6 @@ class BTFBase():
                     self.name = btf.resolve_str(name_off)
 
         self.name_off = name_off
-
-        self.tid = kind
         self.vlen = vlen
         self.tid_flag = kind_flag
         if self.tid in KS_IS_SIZE:
@@ -120,15 +127,27 @@ class BTFBase():
 
         ret = ""
         if self.tid == BTFKIND_CONST:
-            ret = "const: 1, {}".format(self.type) 
+            try:
+                ret = "const:{}".format(self.type.name)
+            except AttributeError:
+                pass
+        elif self.tid == BTFKIND_PTR:
+            try:
+                ret = "ptr: {}".format(self.type.name)
+            except AttributeError:
+                pass
         else:
-            ret = "name: {}, kind: {}".format(
-                    self.name, self.tid, self.vlen)
+            if self.name is None:
+                ret = "name_off: {}, kind: {}".format(
+                        self.name_off, self.tid)
+            else:
+                ret = "name: {}, kind: {}".format(
+                        self.name, self.tid)
             if self.has_size:
                 ret += ", size: {}".format(self.size)
             else:
                 if self.tid == BTFKIND_FUNC_PROTO:
-                    ret += ", type: {}".format(self.type)
+                    ret += ", refer type: {}".format(self.type)
                 else:
                     try:
                         ret += ", type: {}".format(self.type.name)
@@ -347,10 +366,12 @@ JUMP_TABLE = {
 
 class BTFBlob():
     '''A blob of BTF Data'''
+    # pylint: disable=too-many-instance-attributes
 
     def __init__(self, buff):
         self.buff = buff
-        (magic, version, flags, self.hdr_len, self.type_off, self.type_len, self.str_off, self.str_len) = \
+        (magic, version, flags, self.hdr_len, self.type_off,
+         self.type_len, self.str_off, self.str_len) = \
             BTFHEADER.unpack(buff[0:BTFHEADER_SIZE])
         self.elements = []
         self.elements.extend(BASE_TYPES)
@@ -377,7 +398,8 @@ class BTFBlob():
         '''Parse blob'''
         rec_id = 20
         while self.buffpos < self.type_off + self.type_len:
-            (name_off, info, size_or_type) = BTFTYPE.unpack(self.buff[self.buffpos:self.buffpos + BTFSIZE])
+            (name_off, info, size_or_type) = \
+                BTFTYPE.unpack(self.buff[self.buffpos:self.buffpos + BTFSIZE])
             vlen = info & 0xFFFF
             kind = (info & 0x0F000000) >> 24
             kind_flag = not (info & 0x10000000) == 0
@@ -402,24 +424,23 @@ class BTFBlob():
 
 
         for item in self.elements[20:]:
-            if item.tid != BTFKIND_FUNC_PROTO:
-                for member in item.subrecords:
-                    try:
-                        member["type"] = self.elements[member["type"]]
-                    except KeyError:
-                        pass
-                    except IndexError:
-                        pass
-                if not item.has_size:
-                    try:
-                        item.type = self.elements[item.type]
-                    except IndexError:
-                        pass
+            for member in item.subrecords:
+                try:
+                    member["type"] = self.elements[member["type"]]
+                except KeyError:
+                    pass
+                except IndexError:
+                    pass
+            if not item.has_size:
+                try:
+                    item.type = self.elements[item.type]
+                except IndexError:
+                    pass
 
     def __repr__(self):
         '''Print BTF data'''
         ret = ""
         for item in self.elements:
-            if item.tid != 0:
+            if item.tid != 0 and item.tid != BTFKIND_FUNC:
                 ret += "{}\n".format(item)
         return ret
