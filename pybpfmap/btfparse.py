@@ -51,6 +51,10 @@ BTFTYPE_TEMPLATE = "=III"
 BTFTYPE = Struct(BTFTYPE_TEMPLATE)
 BTFSIZE = calcsize(BTFTYPE_TEMPLATE)
 
+BTFINT_TEMPLATE = "=I"
+BTFINT = Struct(BTFINT_TEMPLATE)
+BTFI_SIZE = calcsize(BTFINT_TEMPLATE)
+
 BTFARRAY_TEMPLATE = "=III"
 BTFARRAY = Struct(BTFARRAY_TEMPLATE)
 BTFA_SIZE = calcsize(BTFARRAY_TEMPLATE)
@@ -84,7 +88,7 @@ BTFE64 = Struct(BTFE64_TEMPLATE)
 BTFE64_SIZE = calcsize(BTFE64_TEMPLATE)
 
 # We need to disable this because of using a class per
-# BTF type. While this results in rather ugly python,
+# BTF rtype. While this results in rather ugly python,
 # it may prove useful later when we add parsing, templates,
 # etc.
 
@@ -92,78 +96,198 @@ BTFE64_SIZE = calcsize(BTFE64_TEMPLATE)
 # pylint: disable=too-many-arguments
 # pylint: disable=unused-variable
 
+REF_TYPES = [BTFKIND_CONST, BTFKIND_VOLATILE, BTFKIND_RESTRICT,
+             BTFKIND_VAR, BTFKIND_DECL_TAG, BTFKIND_TYPE_TAG,
+             BTFKIND_PTR]
+
 class BTFBase():
     '''Class representing a single BTF Record'''
     # pylint: disable=too-many-instance-attributes
     def __init__(self, kind=None, vlen=0, kind_flag=False,
                  size_or_type=0, name=None, name_off=0, btf=None):
 
-        self.tid = kind
+        self.data = {}
+        if btf is not None:
+            self.elbufpos = btf.buffpos
+        else:
+            self.ebufpos = 0
+        self.data["tid"] = kind
         self.bufsize = BTFSIZE
         self.btf = btf
         self.has_size = False
-        self.name = None
+        self.data["name"] = None
         if not kind in NO_VALID_NAME:
             if name is not None:
-                self.name = name
+                self.data["name"] = name
             else:
                 if name_off > 0:
-                    self.name = btf.resolve_str(name_off)
+                    self.data["name"] = btf.resolve_str(name_off)
 
         self.name_off = name_off
         self.vlen = vlen
         self.tid_flag = kind_flag
         if self.tid in KS_IS_SIZE:
             self.has_size = True
-            self.size = size_or_type
+            self.data["size"] = size_or_type
         else:
-            self.type = size_or_type
+            self.data["type_id"] = size_or_type
 
-        self.subrecords = []
-        self.subname = "subrecords"
+        if IS_64:
+            self.template = "Q"
+        else:
+            self.template = "I"
+
+
+    def set_size(self, arg):
+        '''Size setter'''
+        self.data["size"] = arg
+
+    def set_type(self, arg):
+        '''Type setter'''
+        self.data["type"] = arg
+
+    def set_name(self, arg):
+        '''Name setter'''
+        self.data["name"] = arg
+
+    def set_tid(self, arg):
+        '''Tid setter'''
+        self.data["tid"] = arg
+
+    def set_template(self, arg):
+        '''Template setter'''
+        self.data["template"] = arg
+
+    def get_size(self):
+        '''Size getter'''
+        return self.data["size"]
+
+    def get_type(self):
+        '''Type getter'''
+        return self.data["type"]
+
+    def get_name(self):
+        '''Name getter'''
+        return self.data["name"]
+
+    def get_tid(self):
+        '''Tid getter'''
+        return self.data["tid"]
+
+    def get_template(self):
+        '''Template getter'''
+        return self.data["template"]
+
+
+    size = property(get_size, set_size)
+    rtype = property(get_type, set_type)
+    name = property(get_name, set_name)
+    tid = property(get_tid, set_tid)
+    template = property(get_template, set_template)
+
 
     def __repr__(self):
         '''Printable representation'''
 
-        ret = ""
-        if self.tid == BTFKIND_CONST:
-            try:
-                ret = "const:{}".format(self.type.name)
-            except AttributeError:
-                pass
-        elif self.tid == BTFKIND_PTR:
-            try:
-                ret = "ptr: {}".format(self.type.name)
-            except AttributeError:
-                pass
-        else:
-            if self.name is None:
-                ret = "name_off: {}, kind: {}".format(
-                        self.name_off, self.tid)
-            else:
-                ret = "name: {}, kind: {}".format(
-                        self.name, self.tid)
-            if self.has_size:
-                ret += ", size: {}".format(self.size)
-            else:
-                if self.tid == BTFKIND_FUNC_PROTO:
-                    ret += ", refer type: {}".format(self.type)
-                else:
-                    try:
-                        ret += ", type: {}".format(self.type.name)
-                    except AttributeError:
-                        pass
-            if len(self.subrecords) > 0:
-                ret += ", {}: {}".format(self.subname, self.subrecords)
-        return ret
+        if self.tid in REF_TYPES and (not self.rtype.tid in REF_TYPES):
+            return "".format({"name":self.rtype.name})
+        return "{}".format(self.data)
+
+    def resolve_types(self):
+        '''resolve_type refereces'''
+        try:
+            if not self.has_size:
+                self.rtype = self.btf.resolve_type(self.data["type_id"])
+                del(self.data["type_id"])
+        except IndexError:
+            pass
+        except KeyError:
+            pass
+
+
+    def generate_template(self):
+        '''Generate parsing template
+        By default treat everything as an unsigned int, descendants will override
+        if needed'''
+
+        if self.template is not None:
+            return self.template
+
+        return None# for now
+#
+#        if self.tid in REF_TYPES:
+#            return fmat
+#        if self.tid == BTFKIND_ARRAY and len(self.records) > 0:
+#            elem = self.records[0]["rtype"].generate_template()
+#            count = 0
+#            fmat = ""
+#            try:
+#                for count in range(0, self.records[0]["nelems"]):
+#                    fmat += elem
+#            except IndexError:
+#                fmat = None
+#            except TypeError:
+#                fmat = None
+#        if self.tid == BTFKIND_STRUCT and len(self.records) > 0:
+#            fmat = ""
+#            try:
+#                print("")
+#                for item in self.records:
+#                   print("{} {} {} {}".format(self.name, item["name"], item["rtype"].name, item["rtype"].tid))
+#                for item in self.records:
+#                    fmat += item["rtype"].generate_template()
+#            except TypeError:
+#                fmat = None
+#
+#        if fmat is not None and with_byte_order:
+#            return "=" + fmat
+#
+#        self.template = fmat
+#
+#        return self.template
+#
 
 class BTFGeneric(BTFBase):
-    '''Generic (no subrecords) init'''
+    '''Generic (no records) init'''
     def __init__(self, kind=None, vlen=0, kind_flag=False,
                  size_or_type=0, name=None, name_off=0, btf=None):
         super().__init__(kind=kind, vlen=vlen, kind_flag=kind_flag,
                          size_or_type=size_or_type, name=name, name_off=name_off,
                          btf=btf)
+
+class BTFInt(BTFBase):
+    '''Int init'''
+    def __init__(self, kind=None, vlen=0, kind_flag=False,
+                 size_or_type=0, name=None, name_off=0, btf=None):
+
+        super().__init__(kind=kind, vlen=vlen, kind_flag=kind_flag,
+                         size_or_type=size_or_type, name=name, name_off=name_off,
+                         btf=btf)
+
+        loc = btf.buffpos + self.bufsize
+        self.bufsize += BTFI_SIZE
+
+        intprops = BTFINT.unpack(btf.buff[loc : loc + BTFI_SIZE])
+
+        self.data["int_encoding"] = (intprops[0] & 0x0f000000) >> 24
+        self.data["int_offset"] = (intprops[0] & 0x00ff0000) >> 16
+        self.data["int_bits"] = intprops[0] & 0x000000ff
+
+        if self.data["int_offset"] > 0:
+            self.template = None
+        else:
+            if self.data["int_bits"] == 8:
+                self.template = 'b'
+            elif self.data["int_bits"] == 16:
+                self.template = 'h'
+            elif self.data["int_bits"] == 32:
+                self.template = 'l'
+            elif  self.data["int_bits"] == 64:
+                self.template = 'q'
+
+            if self.data["int_encoding"] & (1 << 0) == 0:
+                self.template = self.template.capitalize()
+
 
 
 class BTFArray(BTFBase):
@@ -176,14 +300,37 @@ class BTFArray(BTFBase):
                          btf=btf)
 
         loc = btf.buffpos + self.bufsize
-        (atype, index_type, nelems) = BTFARRAY.unpack(btf.buff[loc : loc + BTFA_SIZE])
-        self.subrecords.append({
-            "type" : atype,
-            "index_type" : index_type,
-            "nelems" : nelems
-        })
-        self.subname = "members"
         self.bufsize += BTFA_SIZE
+
+        (artype, index_type, nelems) = BTFARRAY.unpack(btf.buff[loc : loc + BTFA_SIZE])
+        self.data["array_type_id"] = artype
+        self.data["index_type_id"] = index_type
+        self.data["nelems"] = nelems
+
+    def resolve_types(self):
+        '''Resolve type references'''
+
+        self.data["array_type"] = self.btf.resolve_type(self.data["array_type_id"])
+        self.data["index_type"] = self.btf.resolve_type(self.data["index_type_id"])
+        del(self.data["array_type_id"])
+        del(self.data["index_type_id"])
+
+    def generate_template(self):
+        '''Resolve type references'''
+
+        if self.data["array_type"] is None:
+            return
+        try:
+            self.data["array_type"].generate_template()
+            temp = self.data["array_type"].template
+            if temp is None:
+                return
+            self.template = ""
+            for count in range(0, self.data["nelems"]):
+                self.template += temp
+        except AttributeError:
+            pass
+
 
 class BTFStruct(BTFBase):
     '''Struct/Union init'''
@@ -194,19 +341,26 @@ class BTFStruct(BTFBase):
                          name=name, name_off=name_off, btf=btf)
 
         loc = btf.buffpos + self.bufsize
-
         self.bufsize += BTFS_SIZE * self.vlen
 
-        self.subname = "members"
-
+        self.data["members"] = []
         for count in range(0, self.vlen):
             (name_off, stype, offset) = BTFSTRUCT.unpack(btf.buff[loc:loc + BTFS_SIZE])
-            self.subrecords.append({
+            self.data["members"].append({
                 "name" : self.btf.resolve_str(name_off),
-                "type" : stype,
+                "type_id" : stype,
                 "offset" : offset
             })
             loc += BTFS_SIZE
+
+    def resolve_types(self):
+        '''Resolve type references'''
+        try:
+            for member in self.data["members"]:
+                member["type"] = self.btf.resolve_type(member["type_id"])
+                del(member["type_id"])
+        except KeyError:
+            print("Invalid struct/union: {}".format(self.name))
 
 class BTFEnum(BTFBase):
     '''Enum Init'''
@@ -217,18 +371,17 @@ class BTFEnum(BTFBase):
                          btf=btf)
 
         loc = btf.buffpos + self.bufsize
-
         self.bufsize += BTFE_SIZE * self.vlen
 
-        self.subname = "values"
-
+        self.data["values"] = []
         for count in range(0, self.vlen):
             (name_off, val) = BTFENUM.unpack(btf.buff[loc:loc + BTFE_SIZE])
-            self.subrecords.append({
+            self.data["values"].append({
                 "name" : self.btf.resolve_str(name_off),
                 "value" : val
             })
             loc += BTFE_SIZE
+
 
 class BTFFuncProto(BTFBase):
     '''Func proto init'''
@@ -238,18 +391,26 @@ class BTFFuncProto(BTFBase):
                          size_or_type=size_or_type, name=name, name_off=name_off, btf=btf)
 
         loc = btf.buffpos + self.bufsize
-
         self.bufsize += BTFFP_SIZE * self.vlen
 
-        self.subname = "params"
 
+        self.data["params"] = []
         for count in range(0, self.vlen):
             (name_off, ftype) = BTFFP.unpack(btf.buff[loc:loc + BTFFP_SIZE])
-            self.subrecords.append({
+            self.data["params"].append({
                 "name" : self.btf.resolve_str(name_off),
-                "type" : ftype
+                "type_id" : ftype
             })
             loc += BTFFP_SIZE
+
+
+    def resolve_types(self):
+        '''Resolve type references'''
+
+        for member in self.data["params"]:
+            member["type"] = self.btf.resolve_type(member["type_id"])
+            del(member["type_id"])
+
 
 class BTFVar(BTFBase):
     '''Var init'''
@@ -264,9 +425,8 @@ class BTFVar(BTFBase):
 
         self.bufsize += BTFVAR_SIZE
 
-        self.subname = "linkage"
         (linkage) = BTFVAR.unpack(btf.buff[loc:loc + BTFVAR_SIZE])
-        self.subrecords.append({"linkage":linkage})
+        self.data["linkage"] = linkage
 
 class BTFDataSec(BTFBase):
     '''Datasec init'''
@@ -277,19 +437,25 @@ class BTFDataSec(BTFBase):
                          btf=btf)
 
         loc = btf.buffpos + self.bufsize
-
         self.bufsize += BTFSEC_SIZE * self.vlen
 
-        self.subname = "members"
+        self.data["members"] = []
 
         for count in range(0, self.vlen):
             (stype, offset, size) = BTFSEC.unpack(btf.buff[loc:loc + BTFSEC_SIZE])
-            self.subrecords.append({
-                "type" : stype,
+            self.data["members"].append({
+                "type_id" : stype,
                 "offset" : offset,
                 "size" : size
             })
             loc += BTFSEC_SIZE
+
+    def resolve_types(self):
+        '''Resolve type references'''
+
+        for member in self.data["members"]:
+            member["type"] = self.btf.resolve_type(member["type_id"])
+            del(member["type_id"])
 
 class BTFEnum64(BTFBase):
     '''Enum 64 init'''
@@ -300,17 +466,15 @@ class BTFEnum64(BTFBase):
                          btf=btf)
 
         loc = btf.buffpos + self.bufsize
-
         self.bufsize += BTFE64_SIZE * self.vlen
 
-        self.subname = "values"
+        self.data["values"] = []
 
         for count in range(0, self.vlen):
             (name_off, lo32, hi32) = BTFE64.unpack(btf.buff[loc:loc + BTFE64_SIZE])
-            self.subrecords.append({
-                "name" : name_off,
-                "lo32" : lo32,
-                "high32" : hi32
+            self.data["values"].append({
+                "name" : self.btf.resolve_str(name_off),
+                "value" : lo32 + (hi32 << 32)
             })
             loc += BTFE64_SIZE
 
@@ -323,13 +487,10 @@ class BTFDeclTag(BTFBase):
                          btf=btf)
 
         loc = btf.buffpos + self.bufsize
-
         self.bufsize += BTFDECL_TAG_SIZE
 
-        self.subname = "component_idx"
-
         (idx) = BTFDECL_TAG.unpack(btf.buff[loc:loc + BTFDECL_TAG_SIZE])
-        self.subrecords.append(idx)
+        self.data["idx"] = idx
 
 BASE_TYPES = [
     BTFGeneric(kind=BTFKIND_VOID, name="void"),
@@ -337,6 +498,7 @@ BASE_TYPES = [
     BTFGeneric(kind=BTFKIND_PTR, name="ptr"),
     BTFGeneric(kind=BTFKIND_ARRAY, name="array"),
     BTFGeneric(kind=BTFKIND_STRUCT, name="struct"),
+    BTFGeneric(kind=BTFKIND_STRUCT, name="union"),
     BTFGeneric(kind=BTFKIND_ENUM, name="enum"),
     BTFGeneric(kind=BTFKIND_FWD, name="fwd"),
     BTFGeneric(kind=BTFKIND_TYPEDEF, name="typedef"),
@@ -354,6 +516,7 @@ BASE_TYPES = [
 ]
 
 JUMP_TABLE = {
+    BTFKIND_INT: BTFInt,
     BTFKIND_ARRAY: BTFArray,
     BTFKIND_STRUCT: BTFStruct,
     BTFKIND_UNION: BTFStruct,
@@ -362,6 +525,7 @@ JUMP_TABLE = {
     BTFKIND_VAR: BTFVar,
     BTFKIND_DATASEC: BTFDataSec,
     BTFKIND_DECL_TAG: BTFDeclTag,
+    BTFKIND_ENUM64: BTFEnum64
 }
 
 class BTFBlob():
@@ -374,7 +538,6 @@ class BTFBlob():
          self.type_len, self.str_off, self.str_len) = \
             BTFHEADER.unpack(buff[0:BTFHEADER_SIZE])
         self.elements = []
-        self.elements.extend(BASE_TYPES)
         self.buffpos = self.type_off + BTFHEADER_SIZE
 
     def resolve_str(self, index):
@@ -384,24 +547,26 @@ class BTFBlob():
         try:
             for pos in range(start, len(self.buff)):
                 if self.buff[pos] == 0:
-                    res = str(self.buff[start:pos])
+                    res = str(self.buff[start:pos], encoding="ascii")
                     break
         except IndexError:
             pass
         return res
 
     def resolve_type(self, index):
-        '''Resolve type from type table'''
-        return self.elements[index]
+        '''Resolve rtype from rtype table'''
+        try:
+            return self.elements[index - 1] 
+        except IndexError:
+            return BASETYPES[0]
 
     def parse(self):
         '''Parse blob'''
-        rec_id = 20
         while self.buffpos < self.type_off + self.type_len:
             (name_off, info, size_or_type) = \
                 BTFTYPE.unpack(self.buff[self.buffpos:self.buffpos + BTFSIZE])
             vlen = info & 0xFFFF
-            kind = (info & 0x0F000000) >> 24
+            kind = (info & 0x1F000000) >> 24
             kind_flag = not (info & 0x10000000) == 0
             rec = None
             try:
@@ -412,30 +577,28 @@ class BTFBlob():
                                        name_off=name_off,
                                        btf=self)
             except KeyError:
-                rec = BTFGeneric(kind=kind,
-                                 vlen=vlen,
-                                 kind_flag=kind_flag,
-                                 size_or_type=size_or_type,
-                                 name_off=name_off,
-                                 btf=self)
+                if kind > 0:
+                    rec = BTFGeneric(kind=kind,
+                                     vlen=vlen,
+                                     kind_flag=kind_flag,
+                                     size_or_type=size_or_type,
+                                     name_off=name_off,
+                                     btf=self)
+                else:
+                    rec = BTFGENERIC[0]
             self.elements.append(rec)
             self.buffpos += rec.bufsize
-            rec_id += 1
 
+        for item in self.elements:
+            item.resolve_types()
 
-        for item in self.elements[20:]:
-            for member in item.subrecords:
-                try:
-                    member["type"] = self.elements[member["type"]]
-                except KeyError:
-                    pass
-                except IndexError:
-                    pass
-            if not item.has_size:
-                try:
-                    item.type = self.elements[item.type]
-                except IndexError:
-                    pass
+    def find_by_name(self, name):
+        '''Find a type by name'''
+        compare = name.encode("ascii")
+        for element in self.elements:
+            if element.name == compare:
+                return element
+        return None
 
     def __repr__(self):
         '''Print BTF data'''
