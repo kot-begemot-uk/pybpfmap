@@ -100,6 +100,10 @@ REF_TYPES = [BTFKIND_CONST, BTFKIND_VOLATILE, BTFKIND_RESTRICT,
              BTFKIND_VAR, BTFKIND_DECL_TAG, BTFKIND_TYPE_TAG,
              BTFKIND_PTR]
 
+QUAL_TYPES = [BTFKIND_CONST, BTFKIND_VOLATILE, BTFKIND_RESTRICT,
+             BTFKIND_VAR, BTFKIND_DECL_TAG, BTFKIND_TYPE_TAG]
+
+
 class BTFBase():
     '''Class representing a single BTF Record'''
     # pylint: disable=too-many-instance-attributes
@@ -213,39 +217,15 @@ class BTFBase():
         if self.template is not None:
             return self.template
 
-        return None# for now
-#
-#        if self.tid in REF_TYPES:
-#            return fmat
-#        if self.tid == BTFKIND_ARRAY and len(self.records) > 0:
-#            elem = self.records[0]["rtype"].generate_template()
-#            count = 0
-#            fmat = ""
-#            try:
-#                for count in range(0, self.records[0]["nelems"]):
-#                    fmat += elem
-#            except IndexError:
-#                fmat = None
-#            except TypeError:
-#                fmat = None
-#        if self.tid == BTFKIND_STRUCT and len(self.records) > 0:
-#            fmat = ""
-#            try:
-#                print("")
-#                for item in self.records:
-#                   print("{} {} {} {}".format(self.name, item["name"], item["rtype"].name, item["rtype"].tid))
-#                for item in self.records:
-#                    fmat += item["rtype"].generate_template()
-#            except TypeError:
-#                fmat = None
-#
-#        if fmat is not None and with_byte_order:
-#            return "=" + fmat
-#
-#        self.template = fmat
-#
-#        return self.template
-#
+        if IS_64:
+            fmat = "Q"
+        else:
+            fmat = "I"
+
+        if self.tid in QUAL_TYPES:
+            self.template = self.rtype.generate_template()
+        else:
+            self.template = fmat
 
 class BTFGeneric(BTFBase):
     '''Generic (no records) init'''
@@ -281,7 +261,7 @@ class BTFInt(BTFBase):
             elif self.data["int_bits"] == 16:
                 self.template = 'h'
             elif self.data["int_bits"] == 32:
-                self.template = 'l'
+                self.template = 'i'
             elif  self.data["int_bits"] == 64:
                 self.template = 'q'
 
@@ -316,7 +296,7 @@ class BTFArray(BTFBase):
         del(self.data["index_type_id"])
 
     def generate_template(self):
-        '''Resolve type references'''
+        '''Generate template'''
 
         if self.data["array_type"] is None:
             return
@@ -330,7 +310,6 @@ class BTFArray(BTFBase):
                 self.template += temp
         except AttributeError:
             pass
-
 
 class BTFStruct(BTFBase):
     '''Struct/Union init'''
@@ -361,6 +340,19 @@ class BTFStruct(BTFBase):
                 del(member["type_id"])
         except KeyError:
             print("Invalid struct/union: {}".format(self.name))
+
+    def generate_template(self):
+        '''Generate template'''
+
+        fmat = ""
+        if self.tid == BTFKIND_STRUCT and len(self.data["members"]) > 0:
+            try:
+                for item in self.data["members"]:
+                    fmat += item["type"].generate_template()
+            except TypeError:
+                fmat = None
+        self.template = fmat
+
 
 class BTFEnum(BTFBase):
     '''Enum Init'''
