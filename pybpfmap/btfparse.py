@@ -364,6 +364,7 @@ class BTFEnum(BTFBase):
 
         loc = btf.buffpos + self.bufsize
         self.bufsize += BTFE_SIZE * self.vlen
+        self.template = "I"
 
         self.data["values"] = []
         for count in range(0, self.vlen):
