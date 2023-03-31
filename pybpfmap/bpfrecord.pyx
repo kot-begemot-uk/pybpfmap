@@ -132,7 +132,7 @@ class BPFMap():
     If create is False, map will use the fd passed at init time. If it is
     True, the map will be created
     '''
-    def __init__(self, fd, map_type, name, key_size, value_size, max_entries, create=False):
+    def __init__(self, fd, map_type, name, key_size, value_size, max_entries, create=False, btf_params=None):
 
         cdef bpf_map_create_opts opts
 
@@ -140,10 +140,17 @@ class BPFMap():
         self.keysize = key_size
         self.valuesize = value_size
         self.map_type = map_type
+        self.btf_params = btf_params
 
         if create:
             memset(&opts, 0, sizeof(bpf_map_create_opts))
             opts.sz = sizeof(bpf_map_create_opts)
+            if btf_params is not None:
+                opts.btf_fd = btf_params["btf_fd"]
+                opts.btf_key_type_id = btf_params["btf_key_type_id"]
+                opts.btf_value_type_id = btf_params["btf_value_type_id"]
+                opts.btf_vmlinux_value_type_id = btf_params["btf_vmlinux_value_type_id"]
+
             self.fd = bpf_map_create(map_type, name, key_size, value_size, max_entries, &opts)
 
         if self.fd < 0:
@@ -275,7 +282,15 @@ class PinnedBPFMap():
             if bpf_obj_get_info_by_fd(fd, info, &size):
                 raise ValueError
             else:
-                super().__init__(fd, info.type, info.name, info.key_size, info.value_size, info.max_entries, create=False)
+                btf_params = None
+                if info.btf_value_type_id != 0 or info.btf_key_type_id !=0:
+                    btf_params = {
+                        "id" : info.id,
+                        "btf_key_type_id"  : info.btf_key_type_id,
+                        "btf_value_type_id" : info.btf_value_type_id,
+                        "btf_vmlinux_value_type_id" : info.btf_vmlinux_value_type_id
+                    }
+                super().__init__(fd, info.type, info.name, info.key_size, info.value_size, info.max_entries, create=False, btf_params=btf_params)
 
         finally:
             free(info)

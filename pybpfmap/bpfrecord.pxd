@@ -20,6 +20,11 @@ cdef extern from "linux/bpf.h":
         unsigned int value_size
         unsigned int max_entries
         char name[16]
+        unsigned int id
+        unsigned int btf_vmlinux_value_type_id
+        unsigned int btf_id
+        unsigned int btf_key_type_id
+        unsigned int btf_value_type_id
 
 cdef extern from "bpf/libbpf_common.h":
     pass
@@ -31,6 +36,11 @@ cdef extern from "bpf/bpf.h":
 
     struct bpf_map_create_opts:
         size_t sz
+        unsigned int btf_fd
+        unsigned int btf_key_type_id
+        unsigned int btf_value_type_id
+        unsigned int btf_vmlinux_value_type_id
+        
 
     enum bpf_map_type:
         pass
