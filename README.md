@@ -1,13 +1,23 @@
 # pybpfmap
 Python tooling to access bpf maps.
 
-Pybpfmap requires a recent libbpf (0.7 onwards) and cpython 3.0.
+Pybpfmap requires a recent libbpf (0.7 onwards) and cython 3.0.
+
+To install cython using pip:
+```
+pip3 install "cython>=3.0.0b2"
+```
 
 To build pybpfmap:
 
 ```
 python3 setup.py build_ext -i 
 ```
+To install locally pybpfmap
+```
+pip install -e .
+```
+Note - this will just make the build directory importable without putting packages into /usr/local
 
 ## To use pybpfmap:
 ```

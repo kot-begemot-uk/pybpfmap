@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "pybpfmap"
+version = "0.1.0"
+authors = [
+  { name="Anton Ivanov", email="anton.ivanov@cambridgegreys.com" },
+]
+description = "Tools to access BPF MAPs via Python"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Dual BSD/GPL",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/kotbegemotuk/pybpfmap"
+"Bug Tracker" = "https://github.com/kotbegemotuk/pybpfmap/issues"
