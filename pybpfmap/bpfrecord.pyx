@@ -262,7 +262,7 @@ class BPFMap():
         if self.fd > 0:
             os.close(self.fd)
 
-class PinnedBPFMap():
+class PinnedBPFMap(BPFMap):
     '''Class representing a Pinned BPF Map. Takes one argument - pinned
     pathname. Key and value sizes are obtained from the kernel
     using the object info call.
