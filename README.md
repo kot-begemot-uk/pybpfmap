@@ -63,3 +63,8 @@ Will create a parser in native byte order which will unpack() 12 byte data as:
 }
 ```
 and pack() a struct with these fields into 12 byte data
+
+The parser is integrated with the bpf map functionality to the extent possible. You can fetch btf ids for the map, if present and build packers/unpackers from this data.
+Unfortunately, the functionality is rather limited due to the way map btf metadata is verified by the syscall implementing bpf\_map\_create(). The kernel insists on receiving a valid file descriptor when being given a btf options argument for this call. Further to this, it insists that the file descriptor is for a special type of file registered by the bpf/btf code which can be produced only by the loading/relocation process. It is not possible to create such a fd in a lightweight library which is "just trying to create a map". 
+
+If the fds are already supplied for a map created during the load of bpf code, the library can analyze and parse them. It, however, cannot create or alter them in any way. This functionality is largely untested - bug reports are welcome.
