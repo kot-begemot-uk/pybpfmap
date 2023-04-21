@@ -9,10 +9,11 @@
 # You may select, at your option, one of the above-listed licenses.
 
 
-import struct
+from struct import Struct, calcsize
 import sys
 import os
 import cython
+import btfparse
 
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset
@@ -86,9 +87,9 @@ class BPFRecord(IterableBuff):
         for key, template in json_template:
             self.template = self.template + template
 
-        self.compiled = struct.Struct(self.template)
+        self.compiled = Struct(self.template)
 
-        super().__init__(buff, struct.calcsize(self.template))
+        super().__init__(buff, calcsize(self.template))
 
     def unpack(self, buff=None):
         '''Parse the buffer. Buffer is bytes or something that
@@ -141,17 +142,12 @@ class BPFMap():
         self.valuesize = value_size
         self.map_type = map_type
         self.btf_params = btf_params
+        self.parsers = [None, None]
 
         if create:
-            memset(&opts, 0, sizeof(bpf_map_create_opts))
-            opts.sz = sizeof(bpf_map_create_opts)
-            if btf_params is not None:
-                opts.btf_fd = btf_params["btf_fd"]
-                opts.btf_key_type_id = btf_params["btf_key_type_id"]
-                opts.btf_value_type_id = btf_params["btf_value_type_id"]
-                opts.btf_vmlinux_value_type_id = btf_params["btf_vmlinux_value_type_id"]
-
-            self.fd = bpf_map_create(map_type, name, key_size, value_size, max_entries, &opts)
+            # We do not support btf_params here. The restrictions on .fd in the opts make
+            # this support useable only for someone loading a map out of an elf loader
+            self.fd = bpf_map_create(map_type, name, key_size, value_size, max_entries, NULL)
 
         if self.fd < 0:
             raise ValueError
@@ -257,6 +253,25 @@ class BPFMap():
 
         return result
 
+    def generate_parsers(self, key_pinfo, value_pinfo):
+        '''Generate parsing templates for map key and data'''
+        try:
+            self.parsers[0] = BPFRecord(key_pinfo)
+        except TypeError:
+            pass
+        try:
+            self.parsers[1] = BPFRecord(value_pinfo)
+        except TypeError:
+            pass
+
+    def generate_parsers_from_btf(self, path="/sys/kernel/btf/vmlinux"):
+        '''Generate parsing templates for map key and data from btf'''
+        B = btfparse.BTFBlob(open(path, "br").read())
+        B.parse()
+        key_pinfo = B.elements[self.btf_params["btf_key_type_id"]].generate_pinfo()
+        value_pinfo = B.elements[self.btf_params["btf_value_type_id"]].generate_pinfo()
+        self.generate_parsers(key_pinfo, value_pinfo)
+
     def __del__(self):
         '''Cleanup and delete the map'''
         if self.fd > 0:
@@ -284,11 +299,13 @@ class PinnedBPFMap(BPFMap):
             else:
                 btf_params = None
                 if info.btf_value_type_id != 0 or info.btf_key_type_id !=0:
+                    # for some reason kernel params are off by one compared to
+                    # what our parser yields from /sys/kernel/btf/vmlinux
                     btf_params = {
                         "id" : info.id,
-                        "btf_key_type_id"  : info.btf_key_type_id,
-                        "btf_value_type_id" : info.btf_value_type_id,
-                        "btf_vmlinux_value_type_id" : info.btf_vmlinux_value_type_id
+                        "btf_key_type_id"  : info.btf_key_type_id - 1,
+                        "btf_value_type_id" : info.btf_value_type_id - 1,
+                        "btf_vmlinux_value_type_id" : info.btf_vmlinux_value_type_id - 1
                     }
                 super().__init__(fd, info.type, info.name, info.key_size, info.value_size, info.max_entries, create=False, btf_params=btf_params)
 

@@ -141,6 +141,9 @@ class BTFBase():
         else:
             self.template = "I"
 
+    def generate_pinfo(self):
+        '''Generate a tuple to form a high level parser'''
+        return [(self.name, self.generate_template())]
 
     def set_size(self, arg):
         '''Size setter'''
@@ -226,6 +229,7 @@ class BTFBase():
             self.template = self.rtype.generate_template()
         else:
             self.template = fmat
+        return self.template
 
 class BTFGeneric(BTFBase):
     '''Generic (no records) init'''
@@ -286,6 +290,7 @@ class BTFArray(BTFBase):
         self.data["array_type_id"] = artype
         self.data["index_type_id"] = index_type
         self.data["nelems"] = nelems
+        self.template = None
 
     def resolve_types(self):
         '''Resolve type references'''
@@ -297,6 +302,9 @@ class BTFArray(BTFBase):
 
     def generate_template(self):
         '''Generate template'''
+
+        if self.template is not None:
+            return self.template
 
         if self.data["array_type"] is None:
             return
@@ -310,6 +318,7 @@ class BTFArray(BTFBase):
                 self.template += temp
         except AttributeError:
             pass
+        return self.template
 
 class BTFStruct(BTFBase):
     '''Struct/Union init'''
@@ -331,6 +340,7 @@ class BTFStruct(BTFBase):
                 "offset" : offset
             })
             loc += BTFS_SIZE
+        self.template = None
 
     def resolve_types(self):
         '''Resolve type references'''
@@ -344,6 +354,9 @@ class BTFStruct(BTFBase):
     def generate_template(self):
         '''Generate template'''
 
+        if self.template is not None:
+            return self.template
+
         fmat = ""
         if self.tid == BTFKIND_STRUCT and len(self.data["members"]) > 0:
             try:
@@ -352,7 +365,17 @@ class BTFStruct(BTFBase):
             except TypeError:
                 fmat = None
         self.template = fmat
+        return self.template
 
+    def generate_pinfo(self):
+        '''Generate high level parser info'''
+        result = []
+        try:
+            for item in self.data["members"]:
+                result.append((item["name"],item["type"].generate_template()))
+        except TypeError:
+            return None
+        return result
 
 class BTFEnum(BTFBase):
     '''Enum Init'''
@@ -587,9 +610,8 @@ class BTFBlob():
 
     def find_by_name(self, name):
         '''Find a type by name'''
-        compare = name.encode("ascii")
         for element in self.elements:
-            if element.name == compare:
+            if element.name == name:
                 return element
         return None
 
