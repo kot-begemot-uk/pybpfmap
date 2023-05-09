@@ -18,6 +18,9 @@ import btfparse
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset
 
+KEY = 0
+VALUE = 1
+
 def buff_copy(dest, src, length):
     '''Copy buffer, works for anything - bytes(), bytearray(), str() and does not get confused
        by zeroes as str(n)cpy
@@ -128,7 +131,7 @@ class BPFRecord(IterableBuff):
         return self.compiled.pack(*to_pack)
 
 class BPFMap():
-    '''Class representing a BPF Map. 
+    '''Class representing a BPF Map.
     init takes as arguments fd, maptype, name, keysize, value, max_entries.
     If create is False, map will use the fd passed at init time. If it is
     True, the map will be created
@@ -156,28 +159,41 @@ class BPFMap():
         '''Pin BPF map to pathname specified in the argument'''
         return not bpf_obj_pin(self.fd, pathname)
 
+    def convert(self, value, parser):
+        '''Convert value to bytes'''
+
+        if type(value) is dict:
+            if self.parsers[parser] is None:
+                raise ValueError
+            cvalue = self.parsers[parser].pack(value)
+        elif type(value) is str:
+            cvalue = value.encode("ascii")
+        else:
+            cvalue = value
+
+        return cvalue
 
     def update_elem(self, key, value):
         '''Update an element supplied as a Python object.
         key and value should be bytes() objects or cython
         char* pointers.
         '''
+        key = self.convert(key, KEY)
+        value = self.convert(value, VALUE)
 
-        # cython performs an autoconversion from bytes() to char*
+        cdef char *ckey = <char *>key
+        cdef char *cvalue = <char *>value
 
-        cdef char *ckey = key
-        cdef char *cvalue = value
-        
         return not bpf_map_update_elem(self.fd, <void *>ckey, <void *>cvalue, 0)
 
-    def lookup_elem(self, key):
+    def lookup_elem(self, key, want_hash=False):
         '''Lookup an element for key. Key must be a bytes() object
         or a cython char* pointer. Returns a bytes() object if found.
         '''
 
-        # cython performs an autoconversion from bytes() to char*
+        key = self.convert(key, KEY)
 
-        cdef char *ckey = key
+        cdef char *ckey = <char *>key
         cdef char *cvalue = <char*>malloc(self.valuesize)
 
         ret = bpf_map_lookup_elem(self.fd, <void*>ckey, <void*>cvalue)
@@ -185,7 +201,7 @@ class BPFMap():
         if ret == 0:
             # note - we build a new bytes() out of the result
             # this way we can free our buffer which is malloc'ed
-            # and not from the python memory pool. 
+            # and not from the python memory pool.
             # This rather ugly and perl-like incantation prevents
             # cython from treating the result as a char
             result = bytes(<bytes>cvalue[:self.valuesize])
@@ -194,16 +210,21 @@ class BPFMap():
 
         free(cvalue)
 
+        if want_hash:
+            return self.parsers[VALUE].unpack(result)
+
         return result
 
-    def lookup_and_delete(self, key):
+    def lookup_and_delete(self, key, want_hash=False):
         '''Lookup and delete an element by key. Key is a bytes() object.
         Returns a bytes() object if found, otherwise returns None
         '''
 
         # cython performs an autoconversion from bytes() to char*
 
-        cdef char *ckey = key
+        key = self.convert(key, KEY)
+
+        cdef char *ckey = <char *>key
         cdef char *cvalue = <char*>malloc(self.valuesize)
 
         if cvalue is None:
@@ -212,7 +233,7 @@ class BPFMap():
         if not bpf_map_lookup_and_delete_elem(self.fd, <void *>ckey, <void *>cvalue):
             # note - we build a new bytes() out of the result
             # this way we can free our buffer which is malloc'ed
-            # and not from the python memory pool. 
+            # and not from the python memory pool.
             # This rather ugly and perl-like incantation prevents
             # cython from treating the result as a char
             result = bytes(<bytes>cvalue[:self.valuesize])
@@ -221,18 +242,26 @@ class BPFMap():
 
         free(cvalue)
 
+        if want_hash:
+            return self.pasers[VALUE].unpack(result)
+
         return result
+
 
     def delete(self, key):
         '''Delete an element based on key supplied as a bytes() object'''
 
-        cdef char *ckey = key
+        key = self.convert(key, KEY)
+
+        cdef char *ckey = <char *>key
         return not bpf_map_delete_elem(self.fd, ckey)
 
     def get_next_key(self, key):
         '''Get next key from key based on key supplied as a bytes() object'''
 
-        cdef char *ckey = key
+        key = self.convert(key, KEY)
+
+        cdef char *ckey = <char *>key
         cdef char *cnextkey = <char*>malloc(self.keysize)
 
         if cnextkey is None:
@@ -242,7 +271,7 @@ class BPFMap():
         if not bpf_map_get_next_key(self.fd, <void *>ckey, <void *>cnextkey):
             # note - we build a new bytes() out of the result
             # this way we can free our buffer which is malloc'ed
-            # and not from the python memory pool. 
+            # and not from the python memory pool.
             # This rather ugly and perl-like incantation prevents
             # cython from treating the result as a char
             result = bytes(<bytes>cnextkey[:self.keysize])
@@ -256,11 +285,11 @@ class BPFMap():
     def generate_parsers(self, key_pinfo, value_pinfo):
         '''Generate parsing templates for map key and data'''
         try:
-            self.parsers[0] = BPFRecord(key_pinfo)
+            self.parsers[KEY] = BPFRecord(key_pinfo)
         except TypeError:
             pass
         try:
-            self.parsers[1] = BPFRecord(value_pinfo)
+            self.parsers[VALUE] = BPFRecord(value_pinfo)
         except TypeError:
             pass
 
