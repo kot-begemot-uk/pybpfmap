@@ -72,6 +72,40 @@ class IterableBuff():
             raise IndexError
         return self.buff[item]
 
+def produce_template(type_info):
+    '''Generate a Struct template out of type info'''
+    if type(type_info) is tuple:
+        return produce_template(type_info[1])
+    elif type(type_info) is list:
+        res = ""
+        for item in type_info:
+            res = res + produce_template(item)
+        return res
+    else:
+        if type(type_info) is not str:
+            raise TypeError
+        return type_info
+
+def walk_template(type_info, data, pos):
+    '''Walk a template assigning data as we go along'''
+    if type(type_info) is tuple:
+        return {type_info[0]:walk_template(type_info[1], data, pos)}
+    elif type(type_info) is list:
+        if type(type_info[0]) is tuple:
+            res = {}
+        else:
+            res = []
+        for item in type_info:
+            if type(item) is tuple:
+                res[item[0]] = walk_template(item[1], data, pos)
+            else:
+                res.append(walk_template(item, data, pos))
+            pos += 1
+        return res
+    else:
+        return data[pos]
+
+
 
 class BPFRecord(IterableBuff):
     '''Class representing a single bpf map record,
@@ -87,8 +121,7 @@ class BPFRecord(IterableBuff):
         self.template = order
         self.parsed = {}
         self.json_template = json_template
-        for key, template in json_template:
-            self.template = self.template + template
+        self.template += produce_template(self.json_template)
 
         self.compiled = Struct(self.template)
 
@@ -107,13 +140,7 @@ class BPFRecord(IterableBuff):
                 raise ValueError
         else:
             data = self.compiled.unpack(buff)
-        pos = 0
-        parsed = {}
-        for item in data:
-            key, value = self.json_template[pos]
-            parsed[key] = item
-            pos = pos + 1
-        return parsed
+        return walk_template(self.json_template, data, 0)
 
     def pack(self, arg):
         '''Build a buffer from a dict according to the
@@ -126,7 +153,10 @@ class BPFRecord(IterableBuff):
         to_pack = []
 
         for specs in self.json_template:
-            to_pack.append(arg[specs[0]])
+            if type(arg[specs[0]]) is list:
+                to_pack.extend(arg[specs[0]])
+            else:
+                to_pack.append(arg[specs[0]])
 
         return self.compiled.pack(*to_pack)
 

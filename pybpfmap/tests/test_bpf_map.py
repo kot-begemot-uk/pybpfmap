@@ -27,6 +27,7 @@ TESTKEY = bytes.fromhex(TESTSEQ)
 TESTDATA = bytes.fromhex(TESTSEQ + TESTSEQ + TESTSEQ + TESTSEQ)
 TESTKEY_HASH = {"uid": 1, "gid": 1}
 TESTDATA_HASH = {"data0": 0, "data1": 1,"data2": 2, "data3": 3,"data4": 4, "data5": 5,"data6": 6, "data7": 7}
+TESTDATA_ARRAY = {"data": [0, 1, 2, 3, 4, 5, 6, 7]}
 
 def test_create():
     '''Create a map'''
@@ -72,3 +73,20 @@ def test_elements():
     
 
 
+def test_elements2():
+    '''Create a record parser for high level respresntation'''
+
+    m = BPFMap(1, BPF_MAP_TYPE_HASH, "test_elem".encode("ascii"), 16, 64, 256, create=True)
+    m.generate_parsers([("uid", "Q"), ("gid", "Q")], [("data", ["Q","Q","Q","Q","Q","Q","Q","Q"])])
+    assert_(m.update_elem(TESTKEY_HASH, TESTDATA_ARRAY))
+    l = m.lookup_elem(TESTKEY_HASH, want_hash=True)
+
+    assert_equal(l["data"][0],TESTDATA_ARRAY["data"][0])
+    assert_equal(l["data"][1],TESTDATA_ARRAY["data"][1])
+    assert_equal(l["data"][2],TESTDATA_ARRAY["data"][2])
+    assert_equal(l["data"][3],TESTDATA_ARRAY["data"][3])
+    assert_equal(l["data"][4],TESTDATA_ARRAY["data"][4])
+    assert_equal(l["data"][5],TESTDATA_ARRAY["data"][5])
+    assert_equal(l["data"][6],TESTDATA_ARRAY["data"][6])
+    assert_equal(l["data"][7],TESTDATA_ARRAY["data"][7])
+    
