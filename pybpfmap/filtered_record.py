@@ -13,16 +13,16 @@ from bpfrecord import PinnedBPFMap
 def check_perms(mask, data, will_write=False):
     '''Generate a Struct template out of isinstance info'''
 
-    if isinstance(mask) is dict:
+    if isinstance(mask, dict):
         for key, value in mask.items():
             data[key] = check_perms(value, data[key], will_write)
-    elif isinstance(mask) is list:
+    elif isinstance(mask, list):
         index = 0
         for item in mask:
             data[index] = check_perms(item, data[index], will_write)
             index += 1
     else:
-        if isinstance(mask) is not str:
+        if not isinstance(mask, str):
             raise TypeError
         if mask == "R":
             if will_write:
@@ -37,13 +37,13 @@ def update_record(existing, new_value):
     if new_value is None:
         return existing
 
-    if isinstance(existing) is dict:
+    if isinstance(existing, dict):
         for key, value in existing.items():
-            if isinstance(value) is dict or isinstance(value) is list:
+            if isinstance(value, dict) or isinstance(value, list):
                 existing[key] = update_record(value, new_value[key])
-    elif isinstance(existing) is list:
+    elif isinstance(existing, list):
         for index in range(0, len(existing)):
-            if isinstance(existing[index]) is dict or isinstance(existing[index]) is list:
+            if isinstance(existing[index], dict) or isinstance(existing[index], list):
                 existing[index] = update_record(existing[index], new_value[index])
     return new_value
 
