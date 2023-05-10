@@ -79,7 +79,7 @@ def test_elements2():
     m = BPFMap(1, BPF_MAP_TYPE_HASH, "test_elem".encode("ascii"), 16, 64, 256, create=True)
     m.generate_parsers([("uid", "Q"), ("gid", "Q")], [("data", ["Q","Q","Q","Q","Q","Q","Q","Q"])])
     assert_(m.update_elem(TESTKEY_HASH, TESTDATA_ARRAY))
-    l = m.lookup_elem(TESTKEY_HASH, want_hash=True)
+    l = m.lookup_elem(TESTKEY_HASH, want_parsed=True)
 
     assert_equal(l["data"][0],TESTDATA_ARRAY["data"][0])
     assert_equal(l["data"][1],TESTDATA_ARRAY["data"][1])

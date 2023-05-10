@@ -192,7 +192,9 @@ class BPFMap():
     def convert(self, value, parser):
         '''Convert value to bytes'''
 
-        if type(value) is dict:
+        if type(value) is bytes:
+            cvalue = value
+        else: type(value) is dict or type(value) is list:
             if self.parsers[parser] is None:
                 raise ValueError
             cvalue = self.parsers[parser].pack(value)
@@ -216,7 +218,7 @@ class BPFMap():
 
         return not bpf_map_update_elem(self.fd, <void *>ckey, <void *>cvalue, 0)
 
-    def lookup_elem(self, key, want_hash=False):
+    def lookup_elem(self, key, want_parsed=False):
         '''Lookup an element for key. Key must be a bytes() object
         or a cython char* pointer. Returns a bytes() object if found.
         '''
@@ -240,12 +242,12 @@ class BPFMap():
 
         free(cvalue)
 
-        if want_hash:
+        if want_parsed:
             return self.parsers[VALUE].unpack(result)
 
         return result
 
-    def lookup_and_delete(self, key, want_hash=False):
+    def lookup_and_delete(self, key, want_parsed=False):
         '''Lookup and delete an element by key. Key is a bytes() object.
         Returns a bytes() object if found, otherwise returns None
         '''
@@ -272,7 +274,7 @@ class BPFMap():
 
         free(cvalue)
 
-        if want_hash:
+        if want_parsed:
             return self.pasers[VALUE].unpack(result)
 
         return result
