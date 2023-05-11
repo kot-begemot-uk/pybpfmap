@@ -62,4 +62,4 @@ cdef extern from "bpf/bpf.h":
                         unsigned int key_size, unsigned int value_size, \
                         unsigned int max_entries, const bpf_map_create_opts *opts)
 
-    bint bpf_obj_pin(int fd, const char *pathname);
+    int bpf_obj_pin(int fd, const char *pathname);

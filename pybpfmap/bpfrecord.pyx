@@ -14,6 +14,7 @@ import sys
 import os
 import cython
 import btfparse
+import errno
 
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset
@@ -187,6 +188,10 @@ class BPFMap():
 
     def pin_map(self, pathname):
         '''Pin BPF map to pathname specified in the argument'''
+
+        if isinstance(pathname, str):
+            pathname = pathname.encode("ascii")
+
         return not bpf_obj_pin(self.fd, pathname)
 
     def convert(self, value, parser):
@@ -194,7 +199,7 @@ class BPFMap():
 
         if type(value) is bytes:
             cvalue = value
-        else: type(value) is dict or type(value) is list:
+        elif type(value) is dict or type(value) is list:
             if self.parsers[parser] is None:
                 raise ValueError
             cvalue = self.parsers[parser].pack(value)
@@ -343,22 +348,34 @@ class PinnedBPFMap(BPFMap):
     pathname. Key and value sizes are obtained from the kernel
     using the object info call.
     '''
-    def __init__(self, pathname):
+    def __init__(self, pathname, map_type=None, name=None, key_size=None, value_size=None, max_entries=None, btf_params=None):
         cdef bpf_map_info *info = <bpf_map_info *>malloc(sizeof(bpf_map_info))
         cdef unsigned int size = sizeof(bpf_map_info)
 
-        try:
+        if isinstance(pathname, str):
+            self.pathname = pathname.encode("ascii")
+        else:
             self.pathname = pathname
 
-            fd = bpf_obj_get(pathname)
+        try:
+            self.fd = -1
+            fd = bpf_obj_get(self.pathname)
 
             if fd < 0:
                 raise ValueError
 
-            if bpf_obj_get_info_by_fd(fd, info, &size):
+            if map_type is not None:
+                info.type = map_type
+                info.key_size = key_size
+                info.value_size = value_size
+                info.max_entries = max_entries
+                err = 0
+            else:
+                err = bpf_obj_get_info_by_fd(fd, info, &size)
+
+            if err != 0:
                 raise ValueError
             else:
-                btf_params = None
                 if info.btf_value_type_id != 0 or info.btf_key_type_id !=0:
                     # for some reason kernel params are off by one compared to
                     # what our parser yields from /sys/kernel/btf/vmlinux

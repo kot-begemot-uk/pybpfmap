@@ -55,13 +55,13 @@ def test_elements():
     assert_equal(l,TESTDATA)
     
     
-def test_elements():
+def test_elements2():
     '''Create a record parser for high level respresntation'''
 
     m = BPFMap(1, BPF_MAP_TYPE_HASH, "test_elem".encode("ascii"), 16, 64, 256, create=True)
     m.generate_parsers([("uid", "Q"), ("gid", "Q")], [("data0", "Q"), ("data1", "Q"),("data2", "Q"),("data3", "Q"),("data4", "Q"),("data5", "Q"),("data6", "Q"), ("data7", "Q")])
     assert_(m.update_elem(TESTKEY_HASH, TESTDATA_HASH))
-    l = m.lookup_elem(TESTKEY_HASH, want_hash=True)
+    l = m.lookup_elem(TESTKEY_HASH, want_parsed=True)
     assert_equal(l["data0"],TESTDATA_HASH["data0"])
     assert_equal(l["data1"],TESTDATA_HASH["data1"])
     assert_equal(l["data2"],TESTDATA_HASH["data2"])
@@ -73,7 +73,7 @@ def test_elements():
     
 
 
-def test_elements2():
+def test_elements_3():
     '''Create a record parser for high level respresntation'''
 
     m = BPFMap(1, BPF_MAP_TYPE_HASH, "test_elem".encode("ascii"), 16, 64, 256, create=True)

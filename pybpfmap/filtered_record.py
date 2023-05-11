@@ -13,6 +13,9 @@ from bpfrecord import PinnedBPFMap
 def check_perms(mask, data, will_write=False):
     '''Generate a Struct template out of isinstance info'''
 
+    if data is None:
+        return None
+
     if isinstance(mask, dict):
         for key, value in mask.items():
             data[key] = check_perms(value, data[key], will_write)
@@ -53,8 +56,8 @@ class FilteredBPFMap(PinnedBPFMap):
     a limited read-only view, giving him rights to create
     a map is a bit of an oxymoron'''
 
-    def __init__(self, pathname, mask, can_create=True, can_delete=True):
-        super().__init__(pathname)
+    def __init__(self, pathname, mask, can_create=True, can_delete=True, map_type=None, name=None, key_size=None, value_size=None, max_entries=None, btf_params=None):
+        super().__init__(pathname, map_type=map_type, name=name, key_size=key_size, value_size=value_size, max_entries=max_entries, btf_params=btf_params)
         self.mask = mask
         self.can_create = can_create
         self.can_delete = can_delete
@@ -64,27 +67,21 @@ class FilteredBPFMap(PinnedBPFMap):
         to limit fields which can be updated.
         '''
 
-        if self.can_create:
-            return self.update_elem(key, value)
-
         existing = super().lookup_elem(key, want_parsed=True)
-
         if existing is None:
+            if self.can_create:
+                return self.update_elem(key, value)
             raise ValueError
 
-        check_perms(self.mask, value)
-        update_record(existing, value)
+        update_record(existing, check_perms(self.mask, value))
         super().update_elem(key, existing)
         return True
 
     def lookup_elem(self, key):
         '''Lookup element and filter out "unwanted" fields'''
 
-        elem = super.lookup_elem(key, want_parsed=True)
-        if elem is not None:
-            return check_perms(self.mask, elem)
+        return check_perms(self.mask, super().lookup_elem(key, want_parsed=True))
 
-        return None
 
     def delete(self, key):
         '''Delete an element if permitted'''
@@ -95,10 +92,9 @@ class FilteredBPFMap(PinnedBPFMap):
 
     def lookup_and_delete(self, key):
         '''Lookup a record, delete if allowed'''
+
         if self.can_delete:
             elem = super().lookup_and_delete(key)
-            if elem is not None:
-                return check_perms(self.mask, elem)
-            return None
+            return check_perms(self.mask, elem)
 
         raise ValueError
