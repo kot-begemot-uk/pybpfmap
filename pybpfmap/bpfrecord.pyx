@@ -15,12 +15,22 @@ import os
 import cython
 import btfparse
 import errno
+from map_types import BPF_MAP_TYPE_RINGBUF
 
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset
 
 KEY = 0
 VALUE = 1
+
+NO_LOOKUP = [BPF_MAP_TYPE_RINGBUF]
+NO_DELETE = [BPF_MAP_TYPE_RINGBUF]
+NO_GET_NEXT_KEY = [BPF_MAP_TYPE_RINGBUF]
+NO_UPDATE = [BPF_MAP_TYPE_RINGBUF]
+
+BPF_RINGBUF_BUSY_BIT        = (1 << 31)
+BPF_RINGBUF_DISCARD_BIT     = (1 << 30)
+BPF_RINGBUF_HDR_SZ          = 8
 
 def buff_copy(dest, src, length):
     '''Copy buffer, works for anything - bytes(), bytearray(), str() and does not get confused
@@ -161,6 +171,89 @@ class BPFRecord(IterableBuff):
 
         return self.compiled.pack(*to_pack)
 
+cdef roundup(argument):
+    '''Abominable function to compute alignment used by the ringbuffer'''
+    cdef unsigned long int arg = argument
+    cdef unsigned int temp
+    
+    # clear out top 2 bits (discard and busy, if set)
+    arg = arg & (~(BPF_RINGBUF_BUSY_BIT | BPF_RINGBUF_DISCARD_BIT))
+    # add length prefix
+    arg += BPF_RINGBUF_HDR_SZ;
+    # round up to 8 byte alignment
+
+    arg += (8 - (arg % 8))
+
+    return arg
+
+cdef class RingBufferInfo():
+    '''Cython class for the ringbuffer params'''
+
+    cdef char *data
+    cdef unsigned long *consumer_pos
+    cdef unsigned long *producer_pos
+    cdef int record_size
+    cdef unsigned long max_entries
+    cdef unsigned long mask
+
+    def __cinit__(self, fd, max_entries, record_size):
+
+        self.consumer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)
+        if self.consumer_pos == NULL:
+            raise ValueError
+
+        self.producer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_READ, MAP_SHARED, fd, getpagesize())
+        if self.consumer_pos == NULL:
+            raise ValueError
+
+        self.data = <char *>mmap(<void *>NULL, max_entries * 2, PROT_READ, MAP_SHARED, fd, getpagesize() * 2)
+        if self.data == NULL:
+            raise ValueError
+
+        self.record_size = record_size
+        self.max_entries = max_entries
+        self.mask = max_entries - 1
+
+    def __dealloc__(self):
+
+        if self.consumer_pos != NULL:
+            munmap(<void *>self.consumer_pos, getpagesize())
+        if self.producer_pos != NULL:
+            munmap(<void *>self.consumer_pos, getpagesize())
+        if self.data != NULL:
+            munmap(<void *>self.consumer_pos, self.max_entries * 2)
+
+    cpdef fetch_next_records(self):
+        '''Fetch the next set of records'''
+
+        result = list()
+
+        cdef unsigned long int consumer_pos = smp_load_acquire_long_int(self.consumer_pos, 0)
+        cdef unsigned long int producer_pos
+        cdef unsigned long int length
+
+        got_new_data = True
+
+        while got_new_data:
+            got_new_data = False
+            producer_pos = smp_load_acquire_long_int(self.producer_pos, 0)
+
+            while producer_pos > consumer_pos:
+                length = smp_load_acquire_int(<unsigned long *>self.data, consumer_pos & self.mask)
+                if length & BPF_RINGBUF_BUSY_BIT > 0:
+                    break
+
+                got_new_data = True
+    
+                if length & BPF_RINGBUF_DISCARD_BIT == 0:
+                    result.append(bytes(<bytes>self.data[(consumer_pos + BPF_RINGBUF_HDR_SZ) & self.mask:((consumer_pos + BPF_RINGBUF_HDR_SZ) & self.mask) + length]))
+
+                consumer_pos += roundup(length)
+
+            smp_store_release_long_int(self.consumer_pos, 0, consumer_pos);
+
+        return result
+        
 class BPFMap():
     '''Class representing a BPF Map.
     init takes as arguments fd, maptype, name, keysize, value, max_entries.
@@ -176,7 +269,11 @@ class BPFMap():
         self.valuesize = value_size
         self.map_type = map_type
         self.btf_params = btf_params
+        self.max_entries = max_entries
         self.parsers = [None, None]
+        self.rb = None
+
+        # ringbuff specific
 
         if create:
             # We do not support btf_params here. The restrictions on .fd in the opts make
@@ -185,6 +282,15 @@ class BPFMap():
 
         if self.fd < 0:
             raise ValueError
+
+        # special case __init__s I should probably rewrite this as a MixIn
+        if map_type == BPF_MAP_TYPE_RINGBUF:
+            self.rb = RingBufferInfo(fd, self.max_entries, value_size)
+
+    def fetch_next(self):
+        if self.map_type != BPF_MAP_TYPE_RINGBUF:
+            raise ValueError
+        return self.rb.fetch_next_records()
 
     def pin_map(self, pathname):
         '''Pin BPF map to pathname specified in the argument'''
@@ -215,6 +321,10 @@ class BPFMap():
         key and value should be bytes() objects or cython
         char* pointers.
         '''
+
+        if self.map_type in NO_UPDATE:
+            raise ValueError
+
         key = self.convert(key, KEY)
         value = self.convert(value, VALUE)
 
@@ -227,6 +337,9 @@ class BPFMap():
         '''Lookup an element for key. Key must be a bytes() object
         or a cython char* pointer. Returns a bytes() object if found.
         '''
+
+        if self.map_type in NO_LOOKUP:
+            raise ValueError
 
         key = self.convert(key, KEY)
 
@@ -256,6 +369,9 @@ class BPFMap():
         '''Lookup and delete an element by key. Key is a bytes() object.
         Returns a bytes() object if found, otherwise returns None
         '''
+
+        if self.map_type in NO_LOOKUP or self.map_type in NO_DELETE:
+            raise ValueError
 
         # cython performs an autoconversion from bytes() to char*
 
@@ -288,6 +404,9 @@ class BPFMap():
     def delete(self, key):
         '''Delete an element based on key supplied as a bytes() object'''
 
+        if self.map_type in NO_DELETE:
+            raise ValueError
+
         key = self.convert(key, KEY)
 
         cdef char *ckey = <char *>key
@@ -295,6 +414,9 @@ class BPFMap():
 
     def get_next_key(self, key):
         '''Get next key from key based on key supplied as a bytes() object'''
+
+        if self.map_type in NO_GET_NEXT_KEY:
+            raise ValueError
 
         key = self.convert(key, KEY)
 
