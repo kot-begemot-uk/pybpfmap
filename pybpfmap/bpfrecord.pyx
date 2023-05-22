@@ -198,6 +198,10 @@ cdef class RingBufferInfo():
 
     def __cinit__(self, fd, max_entries, record_size):
 
+        data = NULL
+        consumer_pos = NULL
+        producer_pos = NULL
+
         self.consumer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)
         if self.consumer_pos == NULL:
             raise ValueError
@@ -214,14 +218,21 @@ cdef class RingBufferInfo():
         self.max_entries = max_entries
         self.mask = max_entries - 1
 
-    def __dealloc__(self):
 
+    cpdef cleanup(self):
+        '''Cleanup before de-allocation'''
         if self.consumer_pos != NULL:
             munmap(<void *>self.consumer_pos, getpagesize())
+            self.consumer_pos = NULL
         if self.producer_pos != NULL:
             munmap(<void *>self.consumer_pos, getpagesize())
+            self.producer_pos = NULL
         if self.data != NULL:
             munmap(<void *>self.consumer_pos, self.max_entries * 2)
+            self.data = NULL
+
+    def __dealloc__(self):
+        self.cleanup()
 
     cpdef fetch_next_records(self):
         '''Fetch the next set of records'''
