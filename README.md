@@ -106,3 +106,8 @@ p.generate_parsers([("uid", "Q"), ("gid", "Q")], [("data", ["Q","Q","Q","Q","Q",
 ```
 
 For more examples on how to use it see the corresponding testcases
+
+## Ringbuffer support
+
+If the map type passed to BPFMap and its descendants (Pinned and Filtered) is BPF\_MAP\_TYPE\_RINGBUF, ring buffers are mapped to userspace and can be read using the fetch\_next() method. The BPF fd can be used for (e)polling.
+

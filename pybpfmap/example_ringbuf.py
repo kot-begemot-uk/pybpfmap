@@ -22,8 +22,6 @@ import time
 from struct import Struct, calcsize
 
 PIN="/sys/fs/bpf/test_ringbuf"
-TASK_COMM_LEN = 16
-MAX_FILENAME_LEN = 512
 
 #/* definition of a sample sent to user-space from BPF program */
 #struct event {
@@ -32,11 +30,7 @@ MAX_FILENAME_LEN = 512
 #	char filename[MAX_FILENAME_LEN];
 #};
 
-PATTERN_32 = "=l16s512s"
-
-EVENT_PARSER_32 = Struct(PATTERN_32)
-
-event_parser = EVENT_PARSER_32
+PARSER_DEF = [("pid", "l"), ("task", "16s"), ("filename", "512s")]
 
 def setup_ringbuf():
     '''Test Filtered map access'''
@@ -47,14 +41,19 @@ def setup_ringbuf():
             key_size=0,
             value_size=0,
             max_entries=256 * 1024)
+    m.generate_parsers(None, PARSER_DEF)
     return m
+
+def strip_nulls(arg):
+    return arg.strip(b'\0')
 
 
 def get_events(m):
-    events = m.fetch_next()
+    events = m.fetch_next(want_parsed=True)
     for event in events:
-        (pid, comm, filename) = event_parser.unpack(event)
-        print("{} {} {}".format(pid, comm.rstrip(b'\0'), filename.rstrip(b'\0')))
+        event["task"] = strip_nulls(event["task"])
+        event["filename"] = strip_nulls(event["filename"])
+        print("{}".format(event))
 
 m = setup_ringbuf()
 while True:

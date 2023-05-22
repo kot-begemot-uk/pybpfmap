@@ -298,9 +298,17 @@ class BPFMap():
         if map_type == BPF_MAP_TYPE_RINGBUF:
             self.rb = RingBufferInfo(fd, self.max_entries, value_size)
 
-    def fetch_next(self):
+    def fetch_next(self, want_parsed=False):
         if self.map_type != BPF_MAP_TYPE_RINGBUF:
             raise ValueError
+        result = self.rb.fetch_next_records()
+
+        if want_parsed and (self.parsers[VALUE] is not None):
+            parsed = []
+            for item in result:
+                parsed.append(self.parsers[VALUE].unpack(item))
+            return parsed
+
         return self.rb.fetch_next_records()
 
     def pin_map(self, pathname):
@@ -454,10 +462,12 @@ class BPFMap():
 
     def generate_parsers(self, key_pinfo, value_pinfo):
         '''Generate parsing templates for map key and data'''
-        try:
-            self.parsers[KEY] = BPFRecord(key_pinfo)
-        except TypeError:
-            pass
+
+        if key_pinfo is not None:
+            try:
+                self.parsers[KEY] = BPFRecord(key_pinfo)
+            except TypeError:
+                pass
         try:
             self.parsers[VALUE] = BPFRecord(value_pinfo)
         except TypeError:
