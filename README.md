@@ -1,7 +1,12 @@
 # pybpfmap
 Python tooling to access bpf maps.
 
-Pybpfmap requires a recent libbpf (0.7 onwards) and cython 3.0.
+Does not require LLVM, BCC or any other "just a bit on the overweight side" 2G toolkit which takes 2G from your container. In addition to that, it is not picky. It allows you to create and load your own maps without building a BPF program. It also allows you to access maps created by others if they have been pinned to bpfs.
+
+There are no attempts to force any "all encompassing environments" of the "swiss army hypersonic jet chainsaw" type down the user's throat. It provides lightweight tools which are useful in using BPF and nothing more.
+
+The only requirements are python 3, cython 3.x starting from early betas and libbpf from 0.7 onwards. Cython in most distros is pre-3.x, so you need to pull a
+fresh one using pip.
 
 To install cython using pip:
 ```
@@ -13,7 +18,7 @@ To build pybpfmap:
 ```
 python3 setup.py build_ext -i 
 ```
-To install locally pybpfmap
+To install pybpfmap locally
 ```
 pip install -e .
 ```
