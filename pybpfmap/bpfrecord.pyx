@@ -32,6 +32,7 @@ BPF_RINGBUF_BUSY_BIT        = (1 << 31)
 BPF_RINGBUF_DISCARD_BIT     = (1 << 30)
 BPF_RINGBUF_HDR_SZ          = 8
 
+
 def buff_copy(dest, src, length):
     '''Copy buffer, works for anything - bytes(), bytearray(), str() and does not get confused
        by zeroes as str(n)cpy
@@ -187,7 +188,21 @@ cdef roundup(argument):
     return arg
 
 cdef class RingBufferInfo():
-    '''Cython class for the ringbuffer params'''
+    '''Cython class for the ringbuffer specific functionality.
+
+    Limitations:
+        1. Kernel to userspace just works. However, there is no 
+        built inpolling mechanism. Use epoll + event framework of
+        choice.
+        2. Userspace to kernel is limited to ONE PRODUCER ONLY.
+        The kernel can spinlock and protect the structures allowing
+        multiple producers to reserve and submit. Userspace can't.
+        Use by multiple userspace producer threads must be guarded by
+        suitable locks. Use by multiple programs is not supported
+        and will not be supported. We cannot use libbpf here, because
+        it mandates a C caller, callbacks, epoll and all the rest which
+        makes its use "as is" in python not very realistic.
+    '''
 
     cdef char *data
     cdef unsigned long *consumer_pos
@@ -195,6 +210,8 @@ cdef class RingBufferInfo():
     cdef int record_size
     cdef unsigned long max_entries
     cdef unsigned long mask
+
+    cdef int next_rec, next_sz
 
     def __cinit__(self, fd, max_entries, record_size):
 
@@ -234,6 +251,49 @@ cdef class RingBufferInfo():
     def __dealloc__(self):
         self.cleanup()
 
+    cpdef reserve(self, size):
+        '''Reserve N bytes in the buffer'''
+        cdef unsigned long length
+        cdef unsigned long int consumer_pos = smp_load_acquire_long_int(self.consumer_pos, 0)
+        cdef unsigned long int producer_pos = smp_load_acquire_long_int(self.producer_pos, 0)
+
+        self.next_sz = size
+
+        available = (self.mask + 1) - (producer_pos - consumer_pos)
+
+        length = roundup(self.next_sz + BPF_RINGBUF_HDR_SZ)
+
+        if length > available:
+            return False
+
+        smp_store_release_int(self.data, (producer_pos & self.mask), (length | BPF_RINGBUF_BUSY_BIT))
+        smp_store_release_long_int(self.producer_pos, 0, producer_pos + length)
+
+        self.next_rec = producer_pos & self.mask
+
+        return True
+
+    cpdef commit(self, data, discard=False):
+        '''Commmit data to buffer'''
+
+        # Data must not be longer than the previously reserved space
+
+        if len(data) > self.next_sz:
+            return False
+
+        length = roundup(self.next_sz + BPF_RINGBUF_HDR_SZ)
+
+        if discard:
+            length = (length | BPF_RINGBUF_DISCARD_BIT)
+        else:
+            # we copy the record only if we are not discarding
+            for pos in range(0, len(data)):
+                self.data[(self.next_rec + BPF_RINGBUF_HDR_SZ + pos) & self.mask] = data[pos]
+
+        length = smp_store_release_int(self.data, self.next_rec, length)
+
+        return True
+                
     cpdef fetch_next_records(self):
         '''Fetch the next set of records'''
 

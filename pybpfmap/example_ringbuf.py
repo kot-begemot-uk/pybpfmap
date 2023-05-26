@@ -45,7 +45,7 @@ def setup_ringbuf():
     return m
 
 def strip_nulls(arg):
-    return arg.strip(b'\0')
+    return arg[:arg.find(b'\0')]
 
 
 def get_events(m):
