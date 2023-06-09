@@ -13,7 +13,7 @@ from struct import Struct, calcsize
 import sys
 import os
 import cython
-import btfparse
+import pybpfmap.btfparse
 import errno
 from map_types import BPF_MAP_TYPE_RINGBUF
 
@@ -535,7 +535,7 @@ class BPFMap():
 
     def generate_parsers_from_btf(self, path="/sys/kernel/btf/vmlinux"):
         '''Generate parsing templates for map key and data from btf'''
-        B = btfparse.BTFBlob(open(path, "br").read())
+        B = pybpfmap.btfparse.BTFBlob(open(path, "br").read())
         B.parse()
         key_pinfo = B.elements[self.btf_params["btf_key_type_id"]].generate_pinfo()
         value_pinfo = B.elements[self.btf_params["btf_value_type_id"]].generate_pinfo()
