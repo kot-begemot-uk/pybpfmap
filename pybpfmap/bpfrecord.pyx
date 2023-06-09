@@ -15,7 +15,7 @@ import os
 import cython
 import pybpfmap.btfparse
 import errno
-from map_types import BPF_MAP_TYPE_RINGBUF
+from pybpfmap.map_types import BPF_MAP_TYPE_RINGBUF
 
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset
