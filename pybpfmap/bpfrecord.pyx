@@ -14,7 +14,6 @@ import sys
 import os
 import cython
 import pybpfmap.btfparse
-import errno
 from pybpfmap.map_types import BPF_MAP_TYPE_RINGBUF
 
 from libc.stdlib cimport malloc, free
@@ -305,13 +304,9 @@ cdef class RingBufferInfo():
 
         got_new_data = True
 
-        print("Consumer {}".format(consumer_pos))
-
         while got_new_data:
             got_new_data = False
             producer_pos = smp_load_acquire_long_int(self.producer_pos, 0)
-            print("Producer {}".format(consumer_pos, producer_pos))
-
             while producer_pos > consumer_pos:
                 length = smp_load_acquire_int(<unsigned long *>self.data, consumer_pos & self.mask)
                 if length & BPF_RINGBUF_BUSY_BIT > 0:
@@ -359,7 +354,7 @@ class BPFMap():
 
         # special case __init__s I should probably rewrite this as a MixIn
         if map_type == BPF_MAP_TYPE_RINGBUF:
-            self.rb = RingBufferInfo(fd, self.max_entries, value_size)
+            self.rb = RingBufferInfo(self.fd, self.max_entries, value_size)
 
     def fetch_next(self, want_parsed=False):
         if self.map_type != BPF_MAP_TYPE_RINGBUF:

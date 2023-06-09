@@ -84,4 +84,3 @@ cdef extern from "barrier.h":
 
     unsigned int smp_load_acquire_int(void *p, unsigned int offset)
     void smp_store_release_int(void *p, unsigned long int offset, unsigned int value)
-
