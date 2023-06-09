@@ -220,15 +220,15 @@ cdef class RingBufferInfo():
         producer_pos = NULL
 
         self.consumer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)
-        if self.consumer_pos == NULL:
+        if self.consumer_pos == MAP_FAILED:
             raise ValueError
 
         self.producer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_READ, MAP_SHARED, fd, getpagesize())
-        if self.consumer_pos == NULL:
+        if self.producer_pos == MAP_FAILED:
             raise ValueError
 
         self.data = <char *>mmap(<void *>NULL, max_entries * 2, PROT_READ, MAP_SHARED, fd, getpagesize() * 2)
-        if self.data == NULL:
+        if self.data == MAP_FAILED:
             raise ValueError
 
         self.record_size = record_size
@@ -238,13 +238,13 @@ cdef class RingBufferInfo():
 
     cpdef cleanup(self):
         '''Cleanup before de-allocation'''
-        if self.consumer_pos != NULL:
+        if self.consumer_pos != NULL and self.consumer_pos != MAP_FAILED:
             munmap(<void *>self.consumer_pos, getpagesize())
             self.consumer_pos = NULL
-        if self.producer_pos != NULL:
+        if self.producer_pos != NULL and self.producer_pos != MAP_FAILED:
             munmap(<void *>self.consumer_pos, getpagesize())
             self.producer_pos = NULL
-        if self.data != NULL:
+        if self.data != NULL and self.producer_pos != MAP_FAILED:
             munmap(<void *>self.consumer_pos, self.max_entries * 2)
             self.data = NULL
 
@@ -305,9 +305,12 @@ cdef class RingBufferInfo():
 
         got_new_data = True
 
+        print("Consumer {}".format(consumer_pos))
+
         while got_new_data:
             got_new_data = False
             producer_pos = smp_load_acquire_long_int(self.producer_pos, 0)
+            print("Producer {}".format(consumer_pos, producer_pos))
 
             while producer_pos > consumer_pos:
                 length = smp_load_acquire_int(<unsigned long *>self.data, consumer_pos & self.mask)

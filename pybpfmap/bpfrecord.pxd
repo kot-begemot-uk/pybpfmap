@@ -72,6 +72,7 @@ cdef extern from "sys/mman.h":
     cdef int PROT_READ
     cdef int PROT_WRITE
     cdef int MAP_SHARED
+    cdef void *MAP_FAILED
 
 cdef extern from "unistd.h":
     int getpagesize()
