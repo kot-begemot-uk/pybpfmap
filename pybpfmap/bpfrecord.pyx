@@ -146,11 +146,11 @@ class BPFRecord(IterableBuff):
 
         if buff is None:
             if self.buffer is not None:
-                data = self.compiled.unpack(self.buff)
+                data = self.compiled.unpack(self.buff[:self.compiled.size])
             else:
                 raise ValueError
         else:
-            data = self.compiled.unpack(buff)
+            data = self.compiled.unpack(buff[:self.compiled.size])
         return walk_template(self.json_template, data, 0)
 
     def pack(self, arg):
@@ -181,8 +181,8 @@ cdef roundup(argument):
     # add length prefix
     arg += BPF_RINGBUF_HDR_SZ;
     # round up to 8 byte alignment
-
-    arg += (8 - (arg % 8))
+    if (arg % BPF_RINGBUF_HDR_SZ) > 0:
+        arg += (BPF_RINGBUF_HDR_SZ - (arg % BPF_RINGBUF_HDR_SZ))
 
     return arg
 
@@ -260,7 +260,7 @@ cdef class RingBufferInfo():
 
         available = (self.mask + 1) - (producer_pos - consumer_pos)
 
-        length = roundup(self.next_sz + BPF_RINGBUF_HDR_SZ)
+        length = roundup(self.next_sz)
 
         if length > available:
             return False
@@ -310,7 +310,7 @@ cdef class RingBufferInfo():
             while producer_pos > consumer_pos:
                 length = smp_load_acquire_int(<unsigned long *>self.data, consumer_pos & self.mask)
                 if length & BPF_RINGBUF_BUSY_BIT > 0:
-                    break
+                    return result
 
                 got_new_data = True
     
