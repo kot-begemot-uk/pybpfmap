@@ -250,49 +250,36 @@ cdef class RingBufferInfo():
     def __dealloc__(self):
         self.cleanup()
 
-    cpdef reserve(self, size):
-        '''Reserve N bytes in the buffer'''
+    cpdef submit(self, data):
+        '''Submit N bytes in the buffer
+        This is NOT multiple-consumer. There is NOTHING to guard from simultaneous use
+        of the same buffers by multiple consumer.
+        '''
         cdef unsigned long length
         cdef unsigned long int consumer_pos = smp_load_acquire_long_int(self.consumer_pos, 0)
         cdef unsigned long int producer_pos = smp_load_acquire_long_int(self.producer_pos, 0)
+        cdef char *sample
 
-        self.next_sz = size
 
         available = (self.mask + 1) - (producer_pos - consumer_pos)
 
-        length = roundup(self.next_sz)
+        length = roundup(len(data) + BPF_RINGBUF_HDR_SZ)
 
         if length > available:
             return False
 
-        smp_store_release_int(self.data, (producer_pos & self.mask), (length | BPF_RINGBUF_BUSY_BIT))
-        smp_store_release_long_int(self.producer_pos, 0, producer_pos + length)
+        pos = (producer_pos & self.mask)
+        smp_store_release_int(self.data, pos, (length | BPF_RINGBUF_BUSY_BIT))
+        smp_store_release_long_int(self.producer_pos, 0, roundup(producer_pos + length + BPF_RINGBUF_BUSY_BIT) & self.mask)
+        for dbyte in data:
+            self.data[(producer_pos + BPF_RINGBUF_HDR_SZ) & self.mask] = dbyte
+            producer_pos += 1
 
-        self.next_rec = producer_pos & self.mask
-
-        return True
-
-    cpdef commit(self, data, discard=False):
-        '''Commmit data to buffer'''
-
-        # Data must not be longer than the previously reserved space
-
-        if len(data) > self.next_sz:
-            return False
-
-        length = roundup(self.next_sz + BPF_RINGBUF_HDR_SZ)
-
-        if discard:
-            length = (length | BPF_RINGBUF_DISCARD_BIT)
-        else:
-            # we copy the record only if we are not discarding
-            for pos in range(0, len(data)):
-                self.data[(self.next_rec + BPF_RINGBUF_HDR_SZ + pos) & self.mask] = data[pos]
-
-        length = smp_store_release_int(self.data, self.next_rec, length)
+        roundup(producer_pos)
+        smp_store_release_int(self.data, pos, length)
 
         return True
-                
+
     cpdef fetch_next_records(self):
         '''Fetch the next set of records'''
 
@@ -357,6 +344,7 @@ class BPFMap():
             self.rb = RingBufferInfo(self.fd, self.max_entries, value_size)
 
     def fetch_next(self, want_parsed=False):
+        '''Ringbuf specific. Fetch the next set of records'''
         if self.map_type != BPF_MAP_TYPE_RINGBUF:
             raise ValueError
         result = self.rb.fetch_next_records()
@@ -368,6 +356,14 @@ class BPFMap():
             return parsed
 
         return self.rb.fetch_next_records()
+
+    def submit(self, value):
+        if self.map_type != BPF_MAP_TYPE_RINGBUF:
+            raise ValueError
+
+        self.rb.submit(self.convert(value))
+        # lookup with fake values - triggers a wake up on all waiters for this map
+        self.lookup_elem(bytes(range(0, self.keysize - 1)), bytes(range(0, self.valuesize - 1)))
 
     def pin_map(self, pathname):
         '''Pin BPF map to pathname specified in the argument'''
