@@ -14,7 +14,7 @@ import sys
 import os
 import cython
 import pybpfmap.btfparse
-from pybpfmap.map_types import BPF_MAP_TYPE_RINGBUF
+from pybpfmap.map_types import BPF_MAP_TYPE_RINGBUF, BPF_MAP_TYPE_USER_RINGBUF
 
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset
@@ -340,7 +340,7 @@ class BPFMap():
             raise ValueError
 
         # special case __init__s I should probably rewrite this as a MixIn
-        if map_type == BPF_MAP_TYPE_RINGBUF:
+        if map_type == BPF_MAP_TYPE_RINGBUF or map_type == BPF_MAP_TYPE_USER_RINGBUF:
             self.rb = RingBufferInfo(self.fd, self.max_entries, value_size)
 
     def fetch_next(self, want_parsed=False):
@@ -361,7 +361,7 @@ class BPFMap():
         if self.map_type != BPF_MAP_TYPE_RINGBUF:
             raise ValueError
 
-        self.rb.submit(self.convert(value))
+        self.rb.submit(self.convert(value, VALUE))
         # lookup with fake values - triggers a wake up on all waiters for this map
         self.lookup_elem(bytes(range(0, self.keysize - 1)), bytes(range(0, self.valuesize - 1)))
 

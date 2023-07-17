@@ -38,3 +38,4 @@ cdef extern from "bpf/bpf.h":
         BPF_MAP_TYPE_INODE_STORAGE
         BPF_MAP_TYPE_TASK_STORAGE
         BPF_MAP_TYPE_BLOOM_FILTER
+        BPF_MAP_TYPE_USER_RINGBUF
