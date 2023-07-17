@@ -10,6 +10,7 @@
 
 
 from struct import Struct, calcsize
+from struct import error as SError
 import sys
 import os
 import cython
@@ -116,6 +117,24 @@ def walk_template(type_info, data, pos):
     else:
         return data[pos]
 
+def do_pack(template, arg):
+
+    to_pack = []
+
+    if type(template) is list:
+        if type(template[0]) is str:
+            to_pack.extend(arg[:len(template)])
+        else:
+            for item in template:
+                to_pack.extend(do_pack(item[1], arg[item[0]]))
+    else:
+        if type(template) is str:
+            return [arg]
+        else:
+            raise TypeError
+    
+    return to_pack
+
 
 
 class BPFRecord(IterableBuff):
@@ -153,6 +172,7 @@ class BPFRecord(IterableBuff):
             data = self.compiled.unpack(buff[:self.compiled.size])
         return walk_template(self.json_template, data, 0)
 
+
     def pack(self, arg):
         '''Build a buffer from a dict according to the
         template. The buffer is a bytes() object.
@@ -161,16 +181,13 @@ class BPFRecord(IterableBuff):
         if arg is None:
             raise ValueError
 
-        to_pack = []
+        data = do_pack(self.json_template, arg)
+        try:
+            return self.compiled.pack(*data)
+        except SError:
+            return None
 
-        for specs in self.json_template:
-            if type(arg[specs[0]]) is list:
-                to_pack.extend(arg[specs[0]])
-            else:
-                to_pack.append(arg[specs[0]])
-
-        return self.compiled.pack(*to_pack)
-
+        
 cdef roundup(argument):
     '''Abominable function to compute alignment used by the ringbuffer'''
     cdef unsigned long int arg = argument
@@ -203,7 +220,7 @@ cdef class RingBufferInfo():
         makes its use "as is" in python not very realistic.
     '''
 
-    cdef char *data
+    cdef unsigned char *data
     cdef unsigned long *consumer_pos
     cdef unsigned long *producer_pos
     cdef int record_size
@@ -212,21 +229,33 @@ cdef class RingBufferInfo():
 
     cdef int next_rec, next_sz
 
-    def __cinit__(self, fd, max_entries, record_size):
+    def __cinit__(self, fd, max_entries, record_size, map_type):
 
         data = NULL
         consumer_pos = NULL
         producer_pos = NULL
 
-        self.consumer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)
+        if map_type == BPF_MAP_TYPE_USER_RINGBUF:
+            self.consumer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_READ, MAP_SHARED, fd, 0)
+        else:
+            self.consumer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)
+
         if self.consumer_pos == MAP_FAILED:
             raise ValueError
 
-        self.producer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_READ, MAP_SHARED, fd, getpagesize())
+        if map_type == BPF_MAP_TYPE_USER_RINGBUF:
+            self.producer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_WRITE | PROT_READ, MAP_SHARED, fd, getpagesize())
+        else:
+            self.producer_pos = <unsigned long *>mmap(<void *>NULL, getpagesize(), PROT_READ, MAP_SHARED, fd, getpagesize())
+
         if self.producer_pos == MAP_FAILED:
             raise ValueError
 
-        self.data = <char *>mmap(<void *>NULL, max_entries * 2, PROT_READ, MAP_SHARED, fd, getpagesize() * 2)
+        if map_type == BPF_MAP_TYPE_USER_RINGBUF:
+            self.data = <unsigned char *>mmap(<void *>NULL, max_entries * 2, PROT_READ | PROT_WRITE, MAP_SHARED, fd, getpagesize() * 2)
+        else:
+            self.data = <unsigned char *>mmap(<void *>NULL, max_entries * 2, PROT_READ, MAP_SHARED, fd, getpagesize() * 2)
+
         if self.data == MAP_FAILED:
             raise ValueError
 
@@ -341,7 +370,7 @@ class BPFMap():
 
         # special case __init__s I should probably rewrite this as a MixIn
         if map_type == BPF_MAP_TYPE_RINGBUF or map_type == BPF_MAP_TYPE_USER_RINGBUF:
-            self.rb = RingBufferInfo(self.fd, self.max_entries, value_size)
+            self.rb = RingBufferInfo(self.fd, self.max_entries, value_size, map_type)
 
     def fetch_next(self, want_parsed=False):
         '''Ringbuf specific. Fetch the next set of records'''
@@ -358,7 +387,7 @@ class BPFMap():
         return self.rb.fetch_next_records()
 
     def submit(self, value):
-        if self.map_type != BPF_MAP_TYPE_RINGBUF:
+        if self.map_type != BPF_MAP_TYPE_USER_RINGBUF:
             raise ValueError
 
         self.rb.submit(self.convert(value, VALUE))
